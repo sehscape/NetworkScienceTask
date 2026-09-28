@@ -28,7 +28,10 @@ export function Transcript({ lines, empty }: Props) {
     <div className="transcript scroll-area" ref={scrollRef} onScroll={onScroll} aria-live="polite">
       {lines.map((line) => (
         <div key={line.id} className={`line line-${line.speaker}`} data-final={line.final}>
-          <span className="line-who">{line.speaker === 'caller' ? 'You' : 'Covered'}</span>
+          <span className="line-who">
+            {line.speaker === 'caller' ? 'You' : 'Covered'}
+            {line.language && <span className="line-lang">{line.language.native}</span>}
+          </span>
           <p className="line-text">
             {line.text}
             {!line.final && <span className="caret" aria-hidden="true" />}

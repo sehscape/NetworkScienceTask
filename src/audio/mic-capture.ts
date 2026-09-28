@@ -52,7 +52,7 @@ export class MicCapture {
     this.node = new AudioWorkletNode(this.ctx, 'capture-processor', {
       numberOfInputs: 1,
       numberOfOutputs: 0,
-      processorOptions: { chunkMs: 40 },
+      processorOptions: { chunkMs: 20 },
     });
 
     this.node.port.onmessage = (event) => {

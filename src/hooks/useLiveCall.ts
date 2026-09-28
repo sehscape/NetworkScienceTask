@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { emptyCase, type CaseState } from '../live/case-tools';
-import { LiveCall, type Activity, type CallPhase, type Utterance } from '../live/live-call';
+import type { Language } from '../lib/language';
+import { emptyCase, type CaseState, type Citation } from '../live/case-tools';
+import { LiveCall, type Activity, type CallPhase, type PolicyContext, type Utterance } from '../live/live-call';
 import type { ScreenStats } from '../live/screen-share';
 
 const NO_STATS: ScreenStats = { sent: 0, skipped: 0, lastSentAt: 0 };
@@ -17,6 +18,12 @@ export interface CallSnapshot {
   screenStats: ScreenStats;
   startedAt: number;
   endedAt: number;
+  /** Reply latencies in ms, most recent last. */
+  latencies: number[];
+  language?: Language;
+  languages: Language[];
+  /** The clause the viewer should scroll to; the nonce re-triggers the same clause. */
+  focus?: { citation: Citation; nonce: number };
 }
 
 const initial = (): CallSnapshot => ({
@@ -29,6 +36,8 @@ const initial = (): CallSnapshot => ({
   screenStats: NO_STATS,
   startedAt: 0,
   endedAt: 0,
+  latencies: [],
+  languages: [],
 });
 
 /** React binding for a LiveCall. A fresh LiveCall is created for every call. */
@@ -38,22 +47,31 @@ export function useLiveCall() {
 
   const patch = useCallback((next: Partial<CallSnapshot>) => setSnapshot((s) => ({ ...s, ...next })), []);
 
-  const start = useCallback(async () => {
-    callRef.current?.end();
-    setSnapshot(initial());
+  const start = useCallback(
+    async (policy?: PolicyContext) => {
+      callRef.current?.end();
+      setSnapshot(initial());
 
-    const call = new LiveCall({
-      onPhase: (phase, error) =>
-        patch({ phase, error, startedAt: call.startedAt, endedAt: call.endedAt }),
-      onTranscript: (transcript) => patch({ transcript }),
-      onCase: (caseState) => patch({ caseState }),
-      onActivity: (item) => setSnapshot((s) => ({ ...s, activity: [item, ...s.activity].slice(0, 30) })),
-      onSpeaking: (speaking) => patch({ speaking }),
-      onScreen: (screen, screenStats) => patch({ screen, screenStats }),
-    });
-    callRef.current = call;
-    await call.start();
-  }, [patch]);
+      let nonce = 0;
+      const call = new LiveCall(
+        {
+          onPhase: (phase, error) => patch({ phase, error, startedAt: call.startedAt, endedAt: call.endedAt }),
+          onTranscript: (transcript) => patch({ transcript }),
+          onCase: (caseState) => patch({ caseState }),
+          onActivity: (item) => setSnapshot((s) => ({ ...s, activity: [item, ...s.activity].slice(0, 30) })),
+          onSpeaking: (speaking) => patch({ speaking }),
+          onScreen: (screen, screenStats) => patch({ screen, screenStats }),
+          onLatency: (ms) => setSnapshot((s) => ({ ...s, latencies: [...s.latencies, ms].slice(-50) })),
+          onLanguage: (language) => patch({ language, languages: [...call.languages] }),
+          onCite: (citation) => patch({ focus: { citation, nonce: ++nonce } }),
+        },
+        { policy },
+      );
+      callRef.current = call;
+      await call.start();
+    },
+    [patch],
+  );
 
   const end = useCallback(() => callRef.current?.end(), []);
 
@@ -80,6 +98,7 @@ export function useLiveCall() {
 
   const stopScreen = useCallback(() => callRef.current?.stopScreenShare(), []);
   const sendText = useCallback((text: string) => callRef.current?.sendText(text), []);
+  const attachPolicy = useCallback((policy: PolicyContext) => callRef.current?.attachPolicy(policy), []);
 
   // Hang up if the page goes away mid-call.
   useEffect(() => {
@@ -91,5 +110,16 @@ export function useLiveCall() {
     };
   }, []);
 
-  return { snapshot, callRef, start, end, reset, toggleMute, shareScreen, stopScreen, sendText };
+  return {
+    snapshot,
+    callRef,
+    start,
+    end,
+    reset,
+    toggleMute,
+    shareScreen,
+    stopScreen,
+    sendText,
+    attachPolicy,
+  };
 }

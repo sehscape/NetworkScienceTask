@@ -3,7 +3,8 @@ import { MicCapture, MicError } from '../audio/mic-capture';
 import { PcmPlayer, bytesToBase64 } from '../audio/pcm-player';
 import { openDocChannel } from '../lib/doc-channel';
 import { cleanSpaces } from '../lib/format';
-import { emptyCase, runTool, type CaseState } from './case-tools';
+import { detectLanguage, type Language } from '../lib/language';
+import { emptyCase, runTool, type CaseState, type Citation } from './case-tools';
 import { ScreenShare, type ScreenStats } from './screen-share';
 
 export type CallPhase = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'ended' | 'error';
@@ -15,12 +16,19 @@ export interface Utterance {
   final: boolean;
   interrupted?: boolean;
   typed?: boolean;
+  language?: Language;
 }
 
 export interface Activity {
   id: string;
   text: string;
   at: number;
+}
+
+/** A policy the caller loaded in the app. Its text goes to the model. */
+export interface PolicyContext {
+  name: string;
+  text: string;
 }
 
 export interface LiveCallHandlers {
@@ -30,24 +38,76 @@ export interface LiveCallHandlers {
   onActivity(item: Activity): void;
   onSpeaking(speaking: boolean): void;
   onScreen(stream: MediaStream | undefined, stats: ScreenStats): void;
+  /** Time from the caller finishing to the first sound of the reply. */
+  onLatency(ms: number): void;
+  onLanguage(language: Language): void;
+  /** The assistant cited a clause; the in-app viewer scrolls to it. */
+  onCite(citation: Citation): void;
 }
 
 const MAX_RECONNECT_ATTEMPTS = 3;
+/** Mic level (0..1, smoothed) above which we count the caller as speaking. */
+const VOICE_LEVEL = 0.06;
 
 class CallError extends Error {}
+
+// ------------------------------------------------------------ token warm-up
+
+interface SessionTicket {
+  token: string;
+  model: string;
+}
+
+async function requestTicket(body: { resumeHandle?: string; policy?: PolicyContext }): Promise<SessionTicket> {
+  const res = await fetch('/api/session', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.token) throw new CallError(json.message ?? 'Could not start a session.');
+  return json;
+}
+
+const ticketKey = (policy?: PolicyContext) => (policy ? `${policy.name}:${policy.text.length}` : 'none');
+let warm: { key: string; at: number; ticket: Promise<SessionTicket> } | null = null;
+
+/**
+ * Fetch a session token before the caller clicks "Start a call" (on hover or
+ * focus), so the click only has to open the WebSocket. Tokens must be used
+ * within a minute, so a warm token older than 40 s is thrown away.
+ */
+export function prewarmSession(policy?: PolicyContext) {
+  const key = ticketKey(policy);
+  if (warm && warm.key === key && Date.now() - warm.at < 40_000) return;
+  const ticket = requestTicket({ policy });
+  ticket.catch(() => {
+    if (warm?.ticket === ticket) warm = null;
+  });
+  warm = { key, at: Date.now(), ticket };
+}
+
+function takeWarmTicket(policy?: PolicyContext) {
+  const hit = warm && warm.key === ticketKey(policy) && Date.now() - warm.at < 40_000 ? warm.ticket : null;
+  warm = null;
+  return hit;
+}
+
+// ---------------------------------------------------------------- the call
 
 /**
  * One phone call with the assistant.
  *
  * Owns the mic, the speaker, the optional screen share and the Live API
  * session, and translates the raw server stream into things the UI cares
- * about: a transcript, a case file, and who is talking. Knows nothing about
- * React.
+ * about: a transcript, a case file, who is talking, how fast replies come
+ * and which language is being spoken. Knows nothing about React.
  */
 export class LiveCall {
   phase: CallPhase = 'idle';
   caseState: CaseState = emptyCase();
   transcript: Utterance[] = [];
+  languages: Language[] = [];
   startedAt = 0;
   endedAt = 0;
   muted = false;
@@ -56,6 +116,8 @@ export class LiveCall {
   private generation = 0;
   private resumeHandle?: string;
   private reconnecting = false;
+  /** The policy baked into this session's system prompt (reused when resuming). */
+  private sessionPolicy?: PolicyContext;
 
   private mic?: MicCapture;
   private player?: PcmPlayer;
@@ -66,7 +128,17 @@ export class LiveCall {
   private openAssistant?: Utterance;
   private idCounter = 0;
 
-  constructor(private handlers: LiveCallHandlers) {}
+  // Latency tracking
+  private lastInputAt = 0;
+  private turnStartedAt = 0;
+  private modelTurnOpen = false;
+
+  constructor(
+    private handlers: LiveCallHandlers,
+    options: { policy?: PolicyContext } = {},
+  ) {
+    this.sessionPolicy = options.policy;
+  }
 
   // ---------------------------------------------------------------- public
 
@@ -78,25 +150,17 @@ export class LiveCall {
     return this.player?.level ?? 0;
   }
 
-  get assistantSpeaking() {
-    return this.player?.playing ?? false;
-  }
-
   async start() {
     if (this.phase !== 'idle') return;
     this.setPhase('connecting');
 
     try {
-      this.player = new PcmPlayer();
-      this.player.onPlayingChange = (playing) => this.handlers.onSpeaking(playing);
-      await this.player.start();
-
-      this.mic = new MicCapture((pcm) => this.sendAudio(pcm));
-      await this.mic.start();
-
-      await this.connect();
+      // Audio devices and the Gemini connection come up in parallel: the
+      // mic permission prompt and the WebSocket handshake overlap.
+      await Promise.all([this.startAudio(), this.connect()]);
       if (this.abandoned()) return;
       this.startedAt = Date.now();
+      this.turnStartedAt = this.startedAt;
       this.setPhase('live');
       this.sendEvent('[call connected]');
     } catch (err) {
@@ -126,8 +190,15 @@ export class LiveCall {
     if (!clean || !this.session) return;
     this.player?.interrupt();
     this.closeOpenTurns();
-    this.pushUtterance({ speaker: 'caller', text: clean, final: true, typed: true });
+    this.pushUtterance({ speaker: 'caller', text: clean, final: true, typed: true, language: this.noteLanguage(clean) });
+    this.lastInputAt = Date.now();
     this.session.sendRealtimeInput({ text: clean });
+  }
+
+  /** A policy loaded mid-call: hand its full text to the model right away. */
+  attachPolicy(policy: PolicyContext) {
+    if (this.phase !== 'live' || !this.session) return;
+    this.sendEvent(`[policy uploaded: "${policy.name}". Full text follows.]\n${policy.text}`);
   }
 
   async startScreenShare() {
@@ -159,21 +230,38 @@ export class LiveCall {
 
   // ------------------------------------------------------------ connection
 
-  private async connect(resumeHandle?: string) {
-    const res = await fetch('/api/session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ resumeHandle }),
+  private async startAudio() {
+    const player = new PcmPlayer();
+    player.onPlayingChange = (playing) => this.handlers.onSpeaking(playing);
+    this.player = player;
+    await player.start();
+
+    const mic = new MicCapture((pcm) => {
+      // Remember when the caller last made a sound (ignoring our own playback leaking in).
+      if (!this.muted && !player.playing && mic.level > VOICE_LEVEL) this.lastInputAt = Date.now();
+      this.sendAudio(pcm);
     });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body.token) throw new CallError(body.message ?? 'Could not start a session.');
+    this.mic = mic;
+    await mic.start();
+
+    // The connection failed (or the caller hung up) while the permission prompt was open.
+    if (this.hasEnded()) {
+      mic.stop();
+      player.stop();
+    }
+  }
+
+  private async connect(resumeHandle?: string) {
+    const ticket = (!resumeHandle && takeWarmTicket(this.sessionPolicy)) || requestTicket({ resumeHandle, policy: this.sessionPolicy });
+    const { token, model } = await ticket;
+    if (this.hasEnded()) return;
 
     const gen = ++this.generation;
-    const ai = new GoogleGenAI({ apiKey: body.token, httpOptions: { apiVersion: 'v1alpha' } });
+    const ai = new GoogleGenAI({ apiKey: token, httpOptions: { apiVersion: 'v1alpha' } });
 
     // Model, prompt and tools are locked into the token server-side; this config is just a fallback.
-    this.session = await ai.live.connect({
-      model: body.model,
+    const session = await ai.live.connect({
+      model,
       config: { responseModalities: [Modality.AUDIO] },
       callbacks: {
         onmessage: (msg) => gen === this.generation && this.handleMessage(msg),
@@ -181,6 +269,17 @@ export class LiveCall {
         onclose: (e) => gen === this.generation && this.handleClose(e),
       },
     });
+
+    // Torn down while the socket was opening (hang-up, or the mic was refused).
+    if (gen !== this.generation) {
+      try {
+        session.close();
+      } catch {
+        /* noop */
+      }
+      return;
+    }
+    this.session = session;
   }
 
   private handleClose(event: CloseEvent) {
@@ -195,7 +294,7 @@ export class LiveCall {
 
   /** Called on goAway (server is about to recycle the socket) or an unexpected drop. */
   private async reconnect(reason?: string) {
-    if (this.reconnecting || this.phase === 'ended') return;
+    if (this.reconnecting || this.hasEnded()) return;
     if (!this.resumeHandle) {
       this.teardown();
       this.setPhase('error', reason ? `The call dropped: ${reason}` : 'The call dropped.');
@@ -241,6 +340,7 @@ export class LiveCall {
     if (content?.interrupted) {
       // Caller barged in: silence the buffered audio right away.
       this.player?.interrupt();
+      this.modelTurnOpen = false;
       if (this.openAssistant) {
         this.openAssistant.interrupted = true;
         this.openAssistant.final = true;
@@ -255,6 +355,7 @@ export class LiveCall {
 
     for (const part of content?.modelTurn?.parts ?? []) {
       if (part.inlineData?.data && part.inlineData.mimeType?.startsWith('audio/')) {
+        if (!this.modelTurnOpen) this.onReplyStarted();
         this.player?.enqueue(part.inlineData.data);
         this.closeCallerTurn();
       }
@@ -265,6 +366,7 @@ export class LiveCall {
     }
 
     if (content?.turnComplete) {
+      this.modelTurnOpen = false;
       this.closeOpenTurns();
     }
 
@@ -281,6 +383,15 @@ export class LiveCall {
     }
   }
 
+  /** First audio of a reply: measure how long the caller waited for it. */
+  private onReplyStarted() {
+    const now = Date.now();
+    this.modelTurnOpen = true;
+    const waited = now - this.lastInputAt;
+    if (this.lastInputAt > this.turnStartedAt && waited < 10_000) this.handlers.onLatency(waited);
+    this.turnStartedAt = now;
+  }
+
   private handleToolCalls(calls: FunctionCall[]) {
     const functionResponses = calls.map((call) => {
       const name = call.name ?? '';
@@ -289,8 +400,11 @@ export class LiveCall {
       this.handlers.onCase(this.caseState);
       this.handlers.onActivity({ id: this.nextId(), text: result.activity, at: Date.now() });
 
-      if (name === 'cite_clause' && typeof call.args?.clause_ref === 'string') {
-        this.doc.post({ type: 'highlight', ref: call.args.clause_ref, quote: String(call.args.quote ?? '') });
+      if (name === 'cite_clause' && this.caseState.citations[0]) {
+        const citation = this.caseState.citations[0];
+        this.handlers.onCite(citation);
+        // Also reaches the standalone policy page if it's open in another tab.
+        this.doc.post({ type: 'highlight', ref: citation.clause_ref, quote: citation.quote });
       }
       return { id: call.id, name, response: result.response };
     });
@@ -324,7 +438,7 @@ export class LiveCall {
     if (!this.openCaller) {
       this.openCaller = this.pushUtterance({ speaker: 'caller', text: '', final: false });
     }
-    this.openCaller.text += text;
+    this.openCaller.text = joinChunk(this.openCaller.text, text);
     this.emitTranscript();
   }
 
@@ -333,23 +447,32 @@ export class LiveCall {
     if (!this.openAssistant) {
       this.openAssistant = this.pushUtterance({ speaker: 'assistant', text: '', final: false });
     }
-    this.openAssistant.text += text;
+    this.openAssistant.text = joinChunk(this.openAssistant.text, text);
     this.emitTranscript();
   }
 
   private closeCallerTurn() {
     if (!this.openCaller) return;
     this.openCaller.final = true;
+    this.openCaller.language = this.noteLanguage(this.openCaller.text);
     this.openCaller = undefined;
     this.emitTranscript();
   }
 
   private closeOpenTurns() {
-    if (this.openCaller) this.openCaller.final = true;
+    this.closeCallerTurn();
     if (this.openAssistant) this.openAssistant.final = true;
-    this.openCaller = undefined;
     this.openAssistant = undefined;
     this.emitTranscript();
+  }
+
+  /** Labels the caller's language for the UI and the hand-off note. */
+  private noteLanguage(text: string) {
+    const language = detectLanguage(text);
+    if (!language) return undefined;
+    if (!this.languages.some((l) => l.code === language.code)) this.languages.push(language);
+    this.handlers.onLanguage(language);
+    return language;
   }
 
   private pushUtterance(u: Omit<Utterance, 'id'>) {
@@ -416,11 +539,16 @@ export class LiveCall {
   }
 }
 
+/** Transcription arrives in chunks; a new sentence after a tool call sometimes comes without its leading space. */
+function joinChunk(text: string, chunk: string) {
+  return /[.?!।]$/.test(text) && /^[^\s.,?!]/.test(chunk) ? `${text} ${chunk}` : text + chunk;
+}
+
 function describeError(err: unknown) {
   if (err instanceof MicError) {
     if (err.reason === 'denied') return 'Microphone access is blocked. Allow it from the address bar and try again.';
     if (err.reason === 'no-device') return 'No microphone was found. Plug one in and try again.';
-    return 'This browser can\'t capture audio. Try the latest Chrome or Edge.';
+    return "This browser can't capture audio. Try the latest Chrome or Edge.";
   }
   if (err instanceof CallError) return err.message;
   if (err instanceof TypeError) return 'Network error. Check your connection and try again.';

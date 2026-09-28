@@ -21,7 +21,7 @@ export class PcmPlayer {
       numberOfInputs: 0,
       numberOfOutputs: 1,
       outputChannelCount: [1],
-      processorOptions: { prebufferMs: 80 },
+      processorOptions: { prebufferMs: 40 },
     });
     this.node.port.onmessage = (event) => {
       if (event.data?.type === 'state') {

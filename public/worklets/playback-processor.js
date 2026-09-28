@@ -9,7 +9,7 @@
 class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const prebufferMs = options?.processorOptions?.prebufferMs ?? 80;
+    const prebufferMs = options?.processorOptions?.prebufferMs ?? 40;
     this.prebuffer = Math.round((sampleRate * prebufferMs) / 1000);
     this.queue = [];
     this.queued = 0;
@@ -46,9 +46,9 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     if (!this.playing) {
       if (this.queued === 0) return true;
       if (this.waitingSince < 0) this.waitingSince = currentTime;
-      // Wait for a little audio to build up, but never longer than 150 ms.
+      // Wait for a little audio to build up, but never longer than 80 ms.
       const waited = currentTime - this.waitingSince;
-      if (this.queued < this.prebuffer && waited < 0.15) return true;
+      if (this.queued < this.prebuffer && waited < 0.08) return true;
       this.waitingSince = -1;
       this.setPlaying(true);
     }

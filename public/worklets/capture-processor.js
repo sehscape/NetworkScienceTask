@@ -11,7 +11,7 @@ const TARGET_RATE = 16000;
 class CaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const chunkMs = options?.processorOptions?.chunkMs ?? 40;
+    const chunkMs = options?.processorOptions?.chunkMs ?? 20;
     this.ratio = sampleRate / TARGET_RATE;
     this.chunk = new Int16Array(Math.round((TARGET_RATE * chunkMs) / 1000));
     this.filled = 0;
