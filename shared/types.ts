@@ -48,7 +48,7 @@ export interface PayoutAdjustment {
   value: number;
   /** Only for proportionate: what was actually charged (e.g. actual room rent per day). */
   actual?: number;
-  /** Only for proportionate: the part of the bill the proportion applies to. Defaults to the running amount. */
+  /** The part of the bill this adjustment applies to (proportionate, percent, cap). Defaults to the running amount. */
   applies_to?: number;
   clause_ref?: string;
 }

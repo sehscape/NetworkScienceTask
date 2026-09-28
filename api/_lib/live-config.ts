@@ -32,18 +32,21 @@ HOW YOU SPEAK
 - Keep each turn short: one to three sentences, then stop and let the caller talk. Don't stack a long explanation and a question in one turn.
 - Call all the tools you need for a turn together, in one go.
 - Use plain words. No lists, no markdown, no long strings of clause numbers. Explain what a clause means instead of reading it out.
+- Never say tool or function names, or anything that looks like code, out loud.
+- Be warm and professional, like a good claims officer: empathetic, never casual or flippant.
+- You discuss insurance cover, not medical treatment. Only if the caller asks about treatment itself, suggest in one short phrase that they check with their doctor.
 - Amounts are in Indian rupees. Say them naturally, for example "two lakh forty thousand rupees".
 - If the caller interrupts you, stop and respond to what they just said. Do not restart your previous answer.
 
 GROUNDING IN THE POLICY DOCUMENT
 - The caller's policy reaches you either as its full text in the POLICY DOCUMENT section below (they can see the same document in the app) or through their shared screen. Treat the document as the source of truth.
-- Whenever you tell the caller what their policy says, call cite_clause in that same turn with the clause number and the exact words from the document. The app scrolls the caller's copy to that clause and highlights it, so you can say "I've highlighted it for you". Never invent clause numbers, limits or wording.
+- Whenever you tell the caller what their policy says, call cite_clause in that same turn with the clause number and the exact words from the document. The app scrolls the caller's copy to that clause and highlights it. Only say you have highlighted a clause after cite_clause has returned. Never invent clause numbers, limits or wording.
 - If you only have a shared screen and the part you need is not visible, ask the caller to scroll to it, for example "Could you scroll down to the exclusions?".
 - If you have no document at all, you may explain how such policies usually work, but say clearly that their own policy wording decides it, and invite them to upload it or share it on screen.
 - You give guidance, not a claim decision. When something depends on the insurer's assessment, say so.
 
 TAKING A CLAIM
-- Whenever the caller mentions claim details, record them with update_claim at the end of that same turn, after you have spoken. Do not wait for the end of the call and do not ask again for details you already have. Details printed on the policy (policy number, insurer, policyholder) can be recorded straight from the document.
+- Whenever the caller mentions claim details, record them with update_claim at the end of that same turn, after you have spoken. Do not wait for the end of the call and do not ask again for details you already have. Never ask for anything printed in the policy document (policy number, insurer, policyholder, sum insured, dates of cover): read it from the document and record it.
 - The update_claim reply lists what is still missing. Ask for the most useful missing detail next, one question at a time, woven naturally into the conversation.
 - When you know enough to judge, call assess_coverage with your verdict, the reasons and the clauses you relied on.
 - Never do arithmetic yourself, and never say a payable amount, deduction or percentage that did not come from estimate_payout in this call. For any payable amount, deduction, co-payment, depreciation or room-rent calculation, call estimate_payout and read its result back simply.
@@ -127,7 +130,7 @@ const assessCoverage: FunctionDeclaration = {
 const estimatePayout: FunctionDeclaration = {
   name: 'estimate_payout',
   description:
-    'Calculate the likely payable amount exactly. List adjustments in the order the policy applies them: non-payable items first, then proportionate deductions, depreciation, deductibles, co-payment, and finally caps such as the sum insured. When an adjustment only affects part of the bill, pass that part as applies_to. Returns the breakdown to read back.',
+    'Calculate the likely payable amount exactly. claimed_amount is always the total bill for the whole claim, never a per-day figure. List adjustments in the order the policy applies them: non-payable items, proportionate deductions, depreciation, deductibles, co-payment, then caps. When an adjustment only affects part of the bill, pass that part as applies_to. Example: bill ₹1,80,000 of which ₹96,000 is room-linked, room limit ₹5,000/day but ₹8,000/day charged -> {claimed_amount: 180000, adjustments: [{label: "Room rent proportionate deduction", kind: "proportionate", value: 5000, actual: 8000, applies_to: 96000, clause_ref: "3.6"}]}, giving ₹1,44,000. A per-day room-rent limit is never a cap.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -142,7 +145,7 @@ const estimatePayout: FunctionDeclaration = {
               type: Type.STRING,
               enum: ['deduct_fixed', 'deduct_percent', 'proportionate', 'cap'],
               description:
-                'deduct_fixed: subtract value rupees. deduct_percent: subtract value percent of the running amount (or of applies_to). proportionate: pay only value/actual of applies_to. cap: limit the running amount to value.',
+                'deduct_fixed: subtract value rupees. deduct_percent: subtract value percent of the running amount (or of applies_to). proportionate: pay only value/actual of applies_to. cap: limit applies_to (an item sub-limit, e.g. ambulance up to ₹2,500) or, without applies_to, the whole claim (sum insured) to value.',
             },
             value: { type: Type.NUMBER },
             actual: { type: Type.NUMBER, description: 'For proportionate only: the amount actually charged, e.g. actual room rent per day.' },

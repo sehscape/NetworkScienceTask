@@ -33,7 +33,8 @@ export function calculatePayout(args: EstimatePayoutArgs): PayoutEstimate {
         break;
       }
       case 'cap':
-        change = running > value ? value - running : 0;
+        // With applies_to, only that part of the bill is capped (e.g. ambulance up to ₹2,500).
+        change = adj.applies_to !== undefined ? -Math.max(0, base - value) : running > value ? value - running : 0;
         break;
       default:
         continue;

@@ -32,7 +32,7 @@ export interface ToolResult {
   state: CaseState;
   /** Sent back to the model as the function response. */
   response: Record<string, unknown>;
-  /** Short line for the activity feed, e.g. "Pinned clause 3.6". */
+  /** Short label shown under the assistant's message, e.g. "Clause 3.6 highlighted". */
   activity: string;
 }
 
@@ -86,7 +86,7 @@ function updateClaim(state: CaseState, args: Record<string, unknown>): ToolResul
   return {
     state: { ...state, claim, recentlyUpdated: updated },
     response: { saved: updated, still_missing: missing, claim_file: claim },
-    activity: updated.length ? `Claim file updated: ${updated.map(labelFor).join(', ')}` : 'Claim file checked',
+    activity: updated.length ? 'Claim file updated' : 'Claim file checked',
   };
 }
 
@@ -109,7 +109,7 @@ function citeClause(state: CaseState, args: CiteClauseArgs): ToolResult {
   return {
     state: { ...state, citations, recentlyUpdated: [] },
     response: { pinned: true, clause_ref: ref, clauses_pinned: citations.length },
-    activity: `Pinned clause ${ref}${args.title ? ` · ${args.title}` : ''}`,
+    activity: `Clause ${ref} highlighted`,
   };
 }
 
@@ -124,14 +124,20 @@ function assessCoverage(state: CaseState, args: AssessCoverageArgs): ToolResult 
   return {
     state: { ...state, coverage, recentlyUpdated: [] },
     response: { recorded: true },
-    activity: `Coverage view: ${coverage.verdict.replace(/_/g, ' ')}`,
+    activity: `Coverage: ${coverage.verdict.replace(/_/g, ' ')}`,
   };
 }
 
 /** Adjustments the calculator can't apply as given. Better to send the model back than to show a wrong number. */
-function payoutProblems(args: EstimatePayoutArgs) {
+function payoutProblems(args: EstimatePayoutArgs, claim: ClaimFile) {
   const problems: string[] = [];
-  if (!(toNumber(args.claimed_amount) > 0)) problems.push('claimed_amount must be the total bill in rupees.');
+  const claimed = toNumber(args.claimed_amount);
+  if (!(claimed > 0)) problems.push('claimed_amount must be the total bill in rupees.');
+  if (claim.claim_amount && claimed < claim.claim_amount * 0.5) {
+    problems.push(
+      `claimed_amount (${formatINR(claimed)}) is far below the bill in the claim file (${formatINR(claim.claim_amount)}). Use the total bill.`,
+    );
+  }
   for (const adj of args.adjustments ?? []) {
     const value = toNumber(adj.value);
     if (adj.kind === 'proportionate' && !(toNumber(adj.actual) > 0 && value > 0)) {
@@ -141,12 +147,17 @@ function payoutProblems(args: EstimatePayoutArgs) {
     }
     if (adj.kind === 'deduct_percent' && !(value > 0 && value <= 100)) problems.push(`"${adj.label}": value must be a percentage between 0 and 100.`);
     if ((adj.kind === 'deduct_fixed' || adj.kind === 'cap') && !(value > 0)) problems.push(`"${adj.label}": value must be a rupee amount.`);
+    if (adj.kind === 'cap' && adj.applies_to === undefined && value > 0 && value < claimed * 0.25) {
+      problems.push(
+        `"${adj.label}": a cap of ${formatINR(value)} would limit the whole claim to that amount. A cap without applies_to is for the sum insured. For a per-day room-rent limit use kind "proportionate"; for a sub-limit on one item, pass that item's cost as applies_to.`,
+      );
+    }
   }
   return problems;
 }
 
 function estimatePayout(state: CaseState, args: EstimatePayoutArgs): ToolResult {
-  const problems = payoutProblems(args);
+  const problems = payoutProblems(args, state.claim);
   if (problems.length) {
     return {
       state,
@@ -170,7 +181,7 @@ function estimatePayout(state: CaseState, args: EstimatePayoutArgs): ToolResult 
       })),
       reminder: 'This is an estimate. The insurer\'s final assessment can differ.',
     },
-    activity: `Estimated payable ${formatINR(payout.payable)} of ${formatINR(payout.claimed)}`,
+    activity: `Payout ${formatINR(payout.payable)}`,
   };
 }
 
@@ -183,7 +194,7 @@ function setNextSteps(state: CaseState, args: NextStepsArgs): ToolResult {
   return {
     state: { ...state, nextSteps, recentlyUpdated: [] },
     response: { recorded: true },
-    activity: `Next steps shared (${nextSteps.steps.length})`,
+    activity: 'Next steps added',
   };
 }
 
@@ -201,7 +212,7 @@ export function runTool(name: string, args: Record<string, unknown> | undefined,
     case 'set_next_steps':
       return setNextSteps(state, a as unknown as NextStepsArgs);
     default:
-      return { state, response: { error: `Unknown tool "${name}"` }, activity: `Ignored unknown tool ${name}` };
+      return { state, response: { error: `Unknown tool "${name}"` }, activity: `Unknown tool ${name}` };
   }
 }
 
