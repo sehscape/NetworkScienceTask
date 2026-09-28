@@ -67,7 +67,7 @@ export function CallView(props: Props) {
     listening: 'Listening',
   }[orbState];
 
-  const latest = activity[0];
+  const inConversation = transcript.length > 0;
   const lastLatency = latencies[latencies.length - 1];
   const suggestions = policy.doc?.sample ? policies[policy.doc.sample].prompts : DEFAULT_PROMPTS;
 
@@ -84,51 +84,49 @@ export function CallView(props: Props) {
         <DocumentPanel policy={policy} snapshot={snapshot} onShare={onShare} onStopShare={onStopShare} />
       </div>
 
-      <section className="call-col call-center">
-        <div className="orb-wrap">
-          <VoiceOrb getLevels={getLevels} state={orbState} />
-        </div>
-        <p className="call-state" aria-live="polite">
-          {stateLabel}
-        </p>
-
-        <div className="call-meters">
-          <span className="meter" title="Language detected from what you say. The assistant replies in the same one.">
-            <Icon name="globe" />
-            {language ? (
-              <>
-                {language.name}
-                {language.native !== language.name && <span className="meter-native">{language.native}</span>}
-              </>
-            ) : (
-              'Any language'
-            )}
-          </span>
-          <span className="meter" title="Time from when you stop talking to the first sound of the reply">
-            <Icon name="bolt" />
-            {lastLatency ? (
-              <>
-                {(lastLatency / 1000).toFixed(2)} s reply
-                {latencies.length > 2 && <span className="meter-native">median {(median(latencies) / 1000).toFixed(2)} s</span>}
-              </>
-            ) : (
-              'Reply time'
-            )}
-          </span>
-        </div>
-
-        <div className="activity-slot" aria-live="polite">
-          {/* Re-keyed per tool call; CSS fades it in, holds, then fades it out. */}
-          {latest && (
-            <span className="chip chip-accent activity" key={latest.id}>
-              <Icon name="sparkle" />
-              {latest.text}
-            </span>
-          )}
-        </div>
+      <section className="call-col call-center" data-compact={inConversation}>
+        {/* Before anyone speaks the orb is the hero; once the conversation starts it
+            shrinks into a status bar so the conversation gets the room. */}
+        <header className="call-status">
+          <div className="orb-wrap">
+            <VoiceOrb getLevels={getLevels} state={orbState} />
+          </div>
+          <div className="call-status-text">
+            <p className="call-state" aria-live="polite">
+              {stateLabel}
+            </p>
+            <div className="call-meters">
+              <span className="meter" title="Language detected from what you say. The assistant replies in the same one.">
+                <Icon name="globe" />
+                {language ? (
+                  <>
+                    {language.name}
+                    {language.native !== language.name && <span className="meter-native">{language.native}</span>}
+                  </>
+                ) : (
+                  'Any language'
+                )}
+              </span>
+              <span className="meter" title="Time from when you stop talking to the first sound of the reply">
+                <Icon name="bolt" />
+                {lastLatency ? (
+                  <>
+                    {(lastLatency / 1000).toFixed(2)} s reply
+                    {latencies.length > 2 && (
+                      <span className="meter-native">median {(median(latencies) / 1000).toFixed(2)} s</span>
+                    )}
+                  </>
+                ) : (
+                  'Reply time'
+                )}
+              </span>
+            </div>
+          </div>
+        </header>
 
         <Transcript
           lines={transcript}
+          activity={activity}
           empty={
             phase === 'live' && (
               <div className="suggest">

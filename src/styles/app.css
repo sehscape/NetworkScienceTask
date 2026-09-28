@@ -474,7 +474,7 @@
 }
 
 .call-center {
-  align-items: center;
+  align-items: stretch;
   overflow: hidden;
 }
 
@@ -734,7 +734,7 @@
 
 .doc-highlight-tag {
   position: absolute;
-  top: -12px;
+  top: 6px;
   right: 8px;
   display: inline-flex;
   align-items: center;
@@ -849,12 +849,26 @@
   color: var(--ink-3);
 }
 
-/* centre: orb, meters, transcript */
+/* centre: status, conversation, controls */
+
+.call-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  border: 0.67px solid transparent;
+  transition:
+    padding var(--dur-slow) var(--ease-out),
+    background-color var(--dur-slow) var(--ease-out),
+    border-color var(--dur-slow) var(--ease-out);
+}
 
 .orb-wrap {
-  width: min(230px, 26vh);
+  width: min(220px, 26vh);
   aspect-ratio: 1;
   flex: none;
+  transition: width var(--dur-slow) var(--ease-out);
 }
 
 .orb {
@@ -863,11 +877,18 @@
   display: block;
 }
 
+.call-status-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .call-state {
   font-size: var(--text-lg);
   font-weight: 500;
   color: var(--ink-body);
-  margin-top: calc(var(--space-2) * -1);
 }
 
 .call-meters {
@@ -877,11 +898,42 @@
   gap: var(--space-2);
 }
 
+/* Once the conversation starts, the orb shrinks into a status bar. */
+.call-center[data-compact='true'] .call-status {
+  flex-direction: row;
+  gap: var(--space-4);
+  padding: 6px var(--space-5) 6px 6px;
+  border-radius: var(--radius-pill);
+  border-color: var(--blue-line);
+  background: rgb(255 255 255 / 0.8);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+.call-center[data-compact='true'] .orb-wrap {
+  width: 60px;
+}
+
+.call-center[data-compact='true'] .call-status-text {
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.call-center[data-compact='true'] .call-state {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.call-center[data-compact='true'] .call-meters {
+  justify-content: flex-start;
+}
+
 .meter {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: 28px;
   padding: 0 12px;
   border-radius: var(--radius-pill);
   background: #fff;
@@ -890,6 +942,7 @@
   font-weight: 600;
   color: var(--ink-body);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .meter svg {
@@ -903,48 +956,20 @@
   color: var(--ink-3);
 }
 
-.activity-slot {
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* conversation */
 
-.activity {
-  height: 30px;
-  padding: 0 14px;
-  font-size: var(--text-sm);
-  animation: activity 6s var(--ease-out) forwards;
-}
-
-@keyframes activity {
-  0% {
-    opacity: 0;
-    transform: translateY(6px) scale(0.96);
-  }
-  6%,
-  80% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-.transcript {
+.conversation {
   flex: 1;
   width: 100%;
-  max-width: 600px;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-2) var(--space-6);
-  mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 20px), transparent);
+  padding: var(--space-4) var(--space-1);
+  mask-image: linear-gradient(to bottom, transparent, #000 18px);
 }
 
-.transcript-empty {
+.conversation-empty {
   justify-content: center;
   align-items: center;
   mask-image: none;
@@ -964,9 +989,11 @@
   font-size: var(--text-md);
 }
 
-.line {
-  display: grid;
-  gap: 2px;
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 86%;
   animation: line-in var(--dur-med) var(--ease-out);
 }
 
@@ -977,23 +1004,34 @@
   }
 }
 
-.line-who {
+.msg-caller {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.msg-assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.msg-meta {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-xs);
+  gap: 6px;
+  padding: 0 6px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
-.line-assistant .line-who {
+.msg-assistant .msg-meta {
   color: var(--blue-2);
 }
 
-.line-lang {
-  padding: 1px 8px;
+.msg-lang {
+  padding: 1px 7px;
   border-radius: var(--radius-pill);
   background: var(--blue-soft);
   color: var(--blue-2);
@@ -1002,14 +1040,27 @@
   text-transform: none;
 }
 
-.line-text {
-  font-size: var(--text-lg);
-  line-height: 1.5;
+.bubble {
+  margin: 0;
+  padding: 10px 15px;
+  font-size: 15.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.msg-assistant .bubble {
+  background: #fff;
+  border: 0.67px solid var(--blue-line);
+  border-radius: 18px 18px 18px 5px;
+  box-shadow: var(--glass-shadow);
   color: var(--ink);
 }
 
-.line-caller .line-text {
-  color: var(--ink-2);
+.msg-caller .bubble {
+  background: #e8e8ff;
+  border: 0.67px solid rgb(36 36 255 / 0.14);
+  border-radius: 18px 18px 5px 18px;
+  color: var(--ink-body);
 }
 
 .caret {
@@ -1028,18 +1079,48 @@
   }
 }
 
-.line-tag {
+.msg-cut {
   display: inline-block;
   margin-left: var(--space-2);
   padding: 1px 8px;
   border-radius: var(--radius-pill);
   background: var(--track);
   color: var(--ink-3);
-  font-size: var(--text-xs);
-  vertical-align: 2px;
+  font-size: 11px;
+  vertical-align: 1px;
+}
+
+.msg-actions {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.msg-actions li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: #fff;
+  border: 0.67px solid var(--blue-line);
+  color: var(--blue-2);
+  font-size: 12px;
+  font-weight: 500;
+  animation: line-in var(--dur-med) var(--ease-out);
+}
+
+.msg-actions svg {
+  width: 12px;
+  height: 12px;
 }
 
 .inline-error {
+  align-self: center;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1054,6 +1135,7 @@
 }
 
 .type-bar {
+  align-self: center;
   width: 100%;
   max-width: 540px;
   margin-bottom: var(--space-3);
@@ -1070,6 +1152,7 @@
 }
 
 .dock {
+  align-self: center;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -1692,8 +1775,18 @@
     display: flex;
   }
 
-  .transcript {
-    max-height: 45vh;
+  .conversation {
+    max-height: 62vh;
+  }
+
+  .msg {
+    max-width: 92%;
+  }
+
+  .dock {
+    position: sticky;
+    bottom: var(--space-3);
+    z-index: 5;
   }
 
   .summary {

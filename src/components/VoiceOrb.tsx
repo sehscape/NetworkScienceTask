@@ -82,7 +82,8 @@ export function VoiceOrb({ getLevels, state }: Props) {
       ctx.clearRect(0, 0, w, h);
 
       // Halo
-      const halo = ctx.createRadialGradient(cx, cy, base * 0.6, cx, cy, base * 2.2);
+      // Fade the halo out before the canvas edge so it never shows a square outline.
+      const halo = ctx.createRadialGradient(cx, cy, base * 0.6, cx, cy, Math.min(w, h) / 2 - 1);
       halo.addColorStop(0, `rgba(36, 36, 255, ${0.1 + outLevel * 0.3})`);
       halo.addColorStop(1, 'rgba(36, 36, 255, 0)');
       ctx.fillStyle = halo;

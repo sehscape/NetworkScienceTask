@@ -11,6 +11,8 @@ export type CallPhase = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'ended
 
 export interface Utterance {
   id: string;
+  /** When the utterance started, used to place tool actions next to it. */
+  at: number;
   speaker: 'caller' | 'assistant';
   text: string;
   final: boolean;
@@ -21,6 +23,9 @@ export interface Utterance {
 
 export interface Activity {
   id: string;
+  /** The tool that ran, e.g. "cite_clause". */
+  tool: string;
+  /** Short label, e.g. "Clause 3.6 highlighted". */
   text: string;
   at: number;
 }
@@ -409,7 +414,7 @@ export class LiveCall {
       const result = runTool(name, call.args, this.caseState);
       this.caseState = result.state;
       this.handlers.onCase(this.caseState);
-      this.handlers.onActivity({ id: this.nextId(), text: result.activity, at: Date.now() });
+      this.handlers.onActivity({ id: this.nextId(), tool: name, text: result.activity, at: Date.now() });
 
       if (name === 'cite_clause' && this.caseState.citations[0]) {
         const citation = this.caseState.citations[0];
@@ -487,8 +492,8 @@ export class LiveCall {
     return language;
   }
 
-  private pushUtterance(u: Omit<Utterance, 'id'>) {
-    const utterance: Utterance = { id: this.nextId(), ...u };
+  private pushUtterance(u: Omit<Utterance, 'id' | 'at'>) {
+    const utterance: Utterance = { id: this.nextId(), at: Date.now(), ...u };
     this.transcript.push(utterance);
     this.emitTranscript();
     return utterance;
