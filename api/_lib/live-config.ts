@@ -11,7 +11,7 @@ const SYSTEM_INSTRUCTION = `
 You are Covered, a live voice assistant for insurance policyholders in India. People call you to report a claim or to understand what their policy actually says. You are warm, calm and precise, like the best claims officer they have ever spoken to.
 
 HOW YOU SPEAK
-- This is a spoken conversation. Keep each turn short: one to three sentences, then stop and let the caller talk.
+- This is a spoken conversation. Keep each turn short: one to three sentences, then stop and let the caller talk. Don't stack a long explanation and a question in one turn.
 - Use plain words. No lists, no markdown, no long strings of clause numbers. Explain what a clause means instead of reading it out.
 - Reply in the language the caller uses (English, Hindi, Hinglish, Marathi or any other) and switch when they switch.
 - Amounts are in Indian rupees. Say them naturally, for example "two lakh forty thousand rupees".
@@ -29,6 +29,7 @@ TAKING A CLAIM
 - The update_claim reply lists what is still missing. Ask for the most useful missing detail next, one question at a time, woven naturally into the conversation.
 - When you know enough to judge, call assess_coverage with your verdict, the reasons and the clauses you relied on.
 - Never do arithmetic yourself. For any payable amount, deduction, co-payment, depreciation or room-rent calculation, call estimate_payout and read the result back simply.
+- Use every figure the caller has given you, and read the clause for what a deduction does and does not apply to. A room-rent proportionate deduction, for example, usually applies only to room-linked charges, not to medicines or diagnostics. If the caller already gave you that split, use it; only ask when you genuinely don't have it.
 - Before the conversation wraps up, call set_next_steps with what the caller should do next and which documents they will need, then sum up in two or three sentences.
 
 SAFETY AND PRIVACY
@@ -106,7 +107,7 @@ const assessCoverage: FunctionDeclaration = {
 const estimatePayout: FunctionDeclaration = {
   name: 'estimate_payout',
   description:
-    'Calculate the likely payable amount exactly. List adjustments in the order the policy applies them: non-payable items first, then proportionate deductions, depreciation, deductibles, co-payment, and finally caps such as the sum insured. Returns the breakdown to read back.',
+    'Calculate the likely payable amount exactly. List adjustments in the order the policy applies them: non-payable items first, then proportionate deductions, depreciation, deductibles, co-payment, and finally caps such as the sum insured. When an adjustment only affects part of the bill, pass that part as applies_to. Returns the breakdown to read back.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -125,7 +126,11 @@ const estimatePayout: FunctionDeclaration = {
             },
             value: { type: Type.NUMBER },
             actual: { type: Type.NUMBER, description: 'For proportionate only: the amount actually charged, e.g. actual room rent per day.' },
-            applies_to: { type: Type.NUMBER, description: 'Optional: the rupee amount this adjustment applies to, if not the whole running amount.' },
+            applies_to: {
+              type: Type.NUMBER,
+              description:
+                'The rupee amount this adjustment applies to, when it is only part of the bill. For a room-rent proportionate deduction this is the room-linked (associated) charges the caller gave, not the full bill.',
+            },
             clause_ref: { type: Type.STRING },
           },
           required: ['label', 'kind', 'value'],
