@@ -128,7 +128,33 @@ function assessCoverage(state: CaseState, args: AssessCoverageArgs): ToolResult 
   };
 }
 
+/** Adjustments the calculator can't apply as given. Better to send the model back than to show a wrong number. */
+function payoutProblems(args: EstimatePayoutArgs) {
+  const problems: string[] = [];
+  if (!(toNumber(args.claimed_amount) > 0)) problems.push('claimed_amount must be the total bill in rupees.');
+  for (const adj of args.adjustments ?? []) {
+    const value = toNumber(adj.value);
+    if (adj.kind === 'proportionate' && !(toNumber(adj.actual) > 0 && value > 0)) {
+      problems.push(
+        `"${adj.label}": a proportionate deduction needs value = the eligible amount (e.g. room rent limit per day) and actual = what was charged (e.g. actual room rent per day).`,
+      );
+    }
+    if (adj.kind === 'deduct_percent' && !(value > 0 && value <= 100)) problems.push(`"${adj.label}": value must be a percentage between 0 and 100.`);
+    if ((adj.kind === 'deduct_fixed' || adj.kind === 'cap') && !(value > 0)) problems.push(`"${adj.label}": value must be a rupee amount.`);
+  }
+  return problems;
+}
+
 function estimatePayout(state: CaseState, args: EstimatePayoutArgs): ToolResult {
+  const problems = payoutProblems(args);
+  if (problems.length) {
+    return {
+      state,
+      response: { error: 'Nothing was calculated. Fix these and call estimate_payout again.', problems },
+      activity: 'Payout estimate needs more detail',
+    };
+  }
+
   const payout = calculatePayout(args);
   return {
     state: { ...state, payout, recentlyUpdated: [] },
