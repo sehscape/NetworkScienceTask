@@ -128,7 +128,7 @@ The claim file fills itself in as you talk. When you hang up, you get a structur
 ### System overview
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#F3F3FF','primaryBorderColor':'#2424FF','primaryTextColor':'#0F172A','lineColor':'#6B6BFF','clusterBkg':'#FAFAFF','clusterBorder':'#B6B1FF','fontFamily':'DM Sans, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#F3F3FF','primaryBorderColor':'#2424FF','primaryTextColor':'#0F172A','lineColor':'#6B6BFF','clusterBkg':'#FAFAFF','clusterBorder':'#B6B1FF'}}}%%
 flowchart TB
     subgraph B["🖥️ Browser"]
         direction LR
@@ -169,7 +169,7 @@ The browser talks to Gemini **directly** over a WebSocket: serverless functions 
 ### One turn of the conversation
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'actorBkg':'#F3F3FF','actorBorder':'#2424FF','actorTextColor':'#0F172A','signalColor':'#2424FF','signalTextColor':'#0F172A','noteBkgColor':'#FFFFFF','noteBorderColor':'#B6B1FF','fontFamily':'DM Sans, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'actorBkg':'#F3F3FF','actorBorder':'#2424FF','actorTextColor':'#0F172A','signalColor':'#2424FF','signalTextColor':'#0F172A','noteBkgColor':'#FFFFFF','noteBorderColor':'#B6B1FF'}}}%%
 sequenceDiagram
     autonumber
     actor C as Caller
@@ -193,7 +193,7 @@ sequenceDiagram
 ### Getting the policy into the conversation
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#F3F3FF','primaryBorderColor':'#2424FF','primaryTextColor':'#0F172A','lineColor':'#6B6BFF','fontFamily':'DM Sans, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#F3F3FF','primaryBorderColor':'#2424FF','primaryTextColor':'#0F172A','lineColor':'#6B6BFF'}}}%%
 flowchart TD
     A["Caller drops a file"] --> B{"What is it?"}
     B -- "PDF" --> C["pdf.js reads every page<br/>and groups text into lines"]
@@ -214,14 +214,14 @@ flowchart TD
 ### Call lifecycle
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#F3F3FF','primaryBorderColor':'#2424FF','primaryTextColor':'#0F172A','lineColor':'#6B6BFF','fontFamily':'DM Sans, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#F3F3FF','primaryBorderColor':'#2424FF','primaryTextColor':'#0F172A','lineColor':'#6B6BFF'}}}%%
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Connecting: Start a call<br/>(token pre-fetched on hover)
-    Connecting --> Live: mic ready and socket open<br/>(in parallel)
+    Idle --> Connecting: Start a call
+    Connecting --> Live: mic + socket ready
     Connecting --> Error: mic blocked / token refused
-    Live --> Reconnecting: goAway or dropped socket
-    Reconnecting --> Live: resumed with session handle
+    Live --> Reconnecting: connection recycled
+    Reconnecting --> Live: resumed
     Reconnecting --> Error: 3 attempts failed
     Live --> Ended: End call
     Ended --> [*]: hand-off note
@@ -263,7 +263,7 @@ The call screen shows the measured reply time for every turn, and the hand-off n
 <summary><b>Example: how a payout is worked out</b></summary>
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#F3F3FF','primaryBorderColor':'#2424FF','primaryTextColor':'#0F172A','lineColor':'#6B6BFF','fontFamily':'DM Sans, sans-serif'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#F3F3FF','primaryBorderColor':'#2424FF','primaryTextColor':'#0F172A','lineColor':'#6B6BFF'}}}%%
 flowchart LR
     A["Bill ₹1,80,000"] --> B["Room-linked charges ₹96,000<br/>× 5,000 / 8,000 eligible"]
     B --> C["Deduction −₹36,000<br/>(clause 3.6)"]
