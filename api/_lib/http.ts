@@ -38,13 +38,16 @@ export function errorResponse(err: unknown) {
   const message = err instanceof Error ? err.message : String(err);
   const status = typeof (err as { status?: unknown })?.status === 'number' ? (err as { status: number }).status : 0;
 
+  // Google's error text is safe to pass on (it never echoes the key) and makes
+  // failures on a deployment diagnosable without digging through server logs.
+  const detail = message.replace(/\s+/g, ' ').slice(0, 300);
+  console.error('[api] gemini error', status, detail);
+
   if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(message)) {
-    return json({ error: 'rate_limited', message: 'Gemini free-tier limit reached. Give it a minute and try again.' }, 429);
+    return json({ error: 'rate_limited', message: 'Gemini free-tier limit reached. Give it a minute and try again.', detail }, 429);
   }
   if (status === 400 || status === 403 || /API key/i.test(message)) {
-    return json({ error: 'upstream_rejected', message: 'Gemini rejected the request. Check the API key and model access.' }, 502);
+    return json({ error: 'upstream_rejected', message: 'Gemini rejected the request. Check the API key and model access.', detail }, 502);
   }
-
-  console.error('[api] unexpected error', err);
-  return json({ error: 'upstream_error', message: 'Could not reach Gemini right now.' }, 502);
+  return json({ error: 'upstream_error', message: 'Could not reach Gemini right now.', detail }, 502);
 }
