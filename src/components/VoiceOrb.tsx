@@ -83,15 +83,15 @@ export function VoiceOrb({ getLevels, state }: Props) {
 
       // Halo
       const halo = ctx.createRadialGradient(cx, cy, base * 0.6, cx, cy, base * 2.2);
-      halo.addColorStop(0, `rgba(10, 102, 255, ${0.18 + outLevel * 0.5})`);
-      halo.addColorStop(1, 'rgba(10, 102, 255, 0)');
+      halo.addColorStop(0, `rgba(36, 36, 255, ${0.1 + outLevel * 0.3})`);
+      halo.addColorStop(1, 'rgba(36, 36, 255, 0)');
       ctx.fillStyle = halo;
       ctx.fillRect(0, 0, w, h);
 
       // Back layers: slow, translucent
       for (let layer = 2; layer >= 1; layer--) {
         blob(cx, cy, base * (1 + layer * 0.07 + breathe + outLevel * 0.12), 0.03 + energy * 0.16, layer * 1.7);
-        ctx.fillStyle = `rgba(10, 102, 255, ${0.12 + outLevel * 0.12})`;
+        ctx.fillStyle = `rgba(36, 36, 255, ${0.08 + outLevel * 0.1})`;
         ctx.fill();
       }
 
@@ -99,24 +99,24 @@ export function VoiceOrb({ getLevels, state }: Props) {
       const r = base * (1 + breathe + outLevel * 0.08);
       blob(cx, cy, r, 0.015 + energy * 0.09, 0);
       const core = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.45, r * 0.05, cx, cy, r * 1.15);
-      core.addColorStop(0, `rgba(190, 215, 255, ${0.85 + outLevel * 0.15})`);
-      core.addColorStop(0.35, 'rgba(77, 141, 255, 0.95)');
-      core.addColorStop(0.8, 'rgba(10, 102, 255, 0.9)');
-      core.addColorStop(1, 'rgba(6, 40, 120, 0.9)');
+      core.addColorStop(0, `rgba(226, 226, 255, ${0.9 + outLevel * 0.1})`);
+      core.addColorStop(0.35, 'rgba(110, 110, 255, 0.96)');
+      core.addColorStop(0.8, 'rgba(36, 36, 255, 0.96)');
+      core.addColorStop(1, 'rgba(18, 0, 200, 0.96)');
       ctx.fillStyle = core;
       ctx.fill();
 
       // Caller voice: a bright rim that tightens as they speak
       if (inLevel > 0.02) {
         blob(cx, cy, r * (1.06 + inLevel * 0.1), 0.02 + inLevel * 0.12, 3.3);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(0.9, inLevel * 1.6)})`;
+        ctx.strokeStyle = `rgba(0, 0, 239, ${Math.min(0.85, inLevel * 1.6)})`;
         ctx.lineWidth = 1.5 * dpr;
         ctx.stroke();
       }
 
       // Specular highlight for the glass look
       const spec = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.55, 0, cx - r * 0.3, cy - r * 0.55, r * 0.6);
-      spec.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+      spec.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
       spec.addColorStop(1, 'rgba(255, 255, 255, 0)');
       ctx.fillStyle = spec;
       ctx.beginPath();

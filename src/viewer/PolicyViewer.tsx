@@ -82,7 +82,7 @@ export function PolicyViewer() {
 
   return (
     <div className="viewer">
-      <header className="viewer-bar glass glass-strong">
+      <header className="viewer-bar">
         <Logo />
         <div className="segmented" role="tablist" aria-label="Sample policy">
           {(Object.keys(policies) as DocId[]).map((id) => (

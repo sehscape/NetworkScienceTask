@@ -2,18 +2,20 @@
 
 .viewer {
   min-height: 100vh;
+  background: var(--hero-gradient);
 }
 
 .viewer-bar {
   position: sticky;
-  top: var(--space-3);
+  top: 0;
   z-index: 10;
   display: flex;
   align-items: center;
   gap: var(--space-6);
-  margin: var(--space-3) var(--space-6) 0;
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-pill);
+  height: 72px;
+  padding: 0 var(--space-8);
+  background: #fff;
+  box-shadow: var(--header-shadow);
 }
 
 .viewer-hint {
@@ -22,44 +24,17 @@
   color: var(--ink-3);
 }
 
-.segmented {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--fill-2);
-}
-
-.segmented button {
-  height: 32px;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: none;
-  color: var(--ink-2);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background-color var(--dur-fast),
-    color var(--dur-fast);
-}
-
-.segmented button[aria-selected='true'] {
-  background: var(--ink);
-  color: var(--bg);
-}
-
 .viewer-body {
   display: grid;
   grid-template-columns: 240px minmax(0, 860px);
   justify-content: center;
   gap: var(--space-8);
-  padding: var(--space-8) var(--space-6) var(--space-16);
+  padding: var(--space-10) var(--space-6) var(--space-16);
 }
 
 .toc {
   position: sticky;
-  top: 96px;
+  top: 104px;
   align-self: start;
   padding: var(--space-5);
 }
@@ -81,8 +56,8 @@
 }
 
 .toc a:hover {
-  background: var(--fill-2);
-  color: var(--ink);
+  background: var(--blue-soft);
+  color: var(--blue-2);
   text-decoration: none;
 }
 
@@ -91,12 +66,9 @@
   margin-right: 4px;
 }
 
-.toc li[data-state='cited'] a {
-  color: var(--blue-bright);
-}
-
+.toc li[data-state='cited'] a,
 .toc li[data-state='cited'] .mono {
-  color: var(--blue-bright);
+  color: var(--blue-2);
 }
 
 /* ---------------------------------------------------------------- paper */
@@ -107,18 +79,14 @@
   --paper-line: #e3e6ec;
 
   position: relative;
-  background: #fbfbfd;
+  background: #fff;
   color: var(--paper-ink);
-  border-radius: var(--radius-md);
+  border: 0.67px solid var(--blue-line);
+  border-radius: var(--radius-lg);
   padding: var(--space-12) var(--space-16) var(--space-16);
-  box-shadow: 0 40px 80px -40px rgb(0 0 0 / 0.8);
+  box-shadow: var(--glass-shadow-lift);
   font-size: 16px;
   line-height: 1.65;
-  letter-spacing: -0.005em;
-}
-
-.sheet ::selection {
-  background: rgb(var(--blue-rgb) / 0.2);
 }
 
 .specimen {
@@ -149,7 +117,7 @@
   margin-top: var(--space-2);
   font-size: 40px;
   line-height: 1.1;
-  letter-spacing: -0.03em;
+  letter-spacing: var(--tracking-display);
 }
 
 .sheet-kind {
@@ -291,27 +259,27 @@
 /* Highlight states pushed from the call tab */
 
 .doc-clause[data-state='cited'] {
-  background: rgb(var(--blue-rgb) / 0.05);
-  box-shadow: inset 3px 0 0 rgb(var(--blue-rgb) / 0.4);
+  background: rgb(var(--blue-rgb) / 0.04);
+  box-shadow: inset 3px 0 0 rgb(var(--blue-rgb) / 0.35);
 }
 
 .doc-clause[data-state='focus'] {
-  background: rgb(var(--blue-rgb) / 0.1);
+  background: rgb(var(--blue-rgb) / 0.07);
   box-shadow:
-    inset 4px 0 0 var(--blue),
-    0 0 0 1px rgb(var(--blue-rgb) / 0.25);
+    inset 4px 0 0 var(--blue-2),
+    0 0 0 1px rgb(var(--blue-rgb) / 0.2);
   animation: cite-in 900ms var(--ease-out);
 }
 
 .doc-section[data-state='focus'] > h2 {
-  color: var(--blue);
+  color: var(--blue-2);
 }
 
 @keyframes cite-in {
   0% {
     box-shadow:
-      inset 4px 0 0 var(--blue),
-      0 0 0 12px rgb(var(--blue-rgb) / 0.3);
+      inset 4px 0 0 var(--blue-2),
+      0 0 0 12px rgb(var(--blue-rgb) / 0.18);
   }
 }
 
@@ -324,12 +292,11 @@
   color: #fff;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
 .doc-clause[data-state='cited'] .cited-tag {
-  background: rgb(var(--blue-rgb) / 0.14);
-  color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue-2);
 }
 
 .sheet-foot {
@@ -368,16 +335,13 @@
     padding: var(--space-4) var(--space-3) var(--space-12);
   }
 
-  .toc {
-    display: none;
-  }
-
+  .toc,
   .viewer-hint {
     display: none;
   }
 
   .viewer-bar {
-    margin: var(--space-3) var(--space-3) 0;
+    padding: 0 var(--space-4);
     justify-content: space-between;
   }
 
@@ -387,5 +351,56 @@
 
   .schedule dl {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Printing this page is how the sample PDFs in /public/samples are made. */
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 16mm 18mm;
+  }
+
+  .viewer {
+    background: #fff;
+  }
+
+  .viewer-bar,
+  .toc,
+  .viewer-toast,
+  .cited-tag {
+    display: none !important;
+  }
+
+  .viewer-body {
+    display: block;
+    padding: 0;
+  }
+
+  .sheet {
+    border: 0;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    font-size: 11.5pt;
+  }
+
+  .specimen {
+    position: static;
+    margin-bottom: 12pt;
+  }
+
+  .doc-clause {
+    break-inside: avoid;
+    margin: 0;
+    padding: 4pt 0;
+  }
+
+  .doc-section > h2 {
+    break-after: avoid;
+  }
+
+  .schedule {
+    break-inside: avoid;
   }
 }
