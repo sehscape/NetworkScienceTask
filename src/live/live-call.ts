@@ -46,8 +46,8 @@ export interface LiveCallHandlers {
 }
 
 const MAX_RECONNECT_ATTEMPTS = 3;
-/** Mic level (0..1, smoothed) above which we count the caller as speaking. */
-const VOICE_LEVEL = 0.06;
+/** Mic level (0..1, smoothed) above which we count the caller as speaking. Noise-suppressed silence sits well below. */
+const VOICE_LEVEL = 0.025;
 
 class CallError extends Error {}
 
@@ -130,6 +130,7 @@ export class LiveCall {
 
   // Latency tracking
   private lastInputAt = 0;
+  private lastTranscriptAt = 0;
   private turnStartedAt = 0;
   private modelTurnOpen = false;
 
@@ -383,12 +384,22 @@ export class LiveCall {
     }
   }
 
-  /** First audio of a reply: measure how long the caller waited for it. */
+  /**
+   * First audio of a reply: measure how long the caller waited for it, from
+   * the last moment their mic picked up speech. If the mic level never
+   * crossed the threshold (a very quiet caller), fall back to when their
+   * words were last transcribed, which slightly understates the wait.
+   */
   private onReplyStarted() {
     const now = Date.now();
     this.modelTurnOpen = true;
-    const waited = now - this.lastInputAt;
-    if (this.lastInputAt > this.turnStartedAt && waited < 10_000) this.handlers.onLatency(waited);
+    const spokeAt =
+      this.lastInputAt > this.turnStartedAt
+        ? this.lastInputAt
+        : this.lastTranscriptAt > this.turnStartedAt
+          ? this.lastTranscriptAt
+          : 0;
+    if (spokeAt && now - spokeAt < 10_000) this.handlers.onLatency(now - spokeAt);
     this.turnStartedAt = now;
   }
 
@@ -435,6 +446,7 @@ export class LiveCall {
   // ------------------------------------------------------------ transcript
 
   private appendCaller(text: string) {
+    this.lastTranscriptAt = Date.now();
     if (!this.openCaller) {
       this.openCaller = this.pushUtterance({ speaker: 'caller', text: '', final: false });
     }
