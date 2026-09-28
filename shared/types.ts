@@ -95,6 +95,9 @@ export interface ReportRequest {
   payout?: PayoutEstimate;
   nextSteps?: NextStepsArgs;
   durationSeconds: number;
+  /** Languages the caller spoke, e.g. ["Hindi", "English"]. */
+  languages?: string[];
+  policyName?: string;
 }
 
 export interface CallReport {

@@ -17,6 +17,9 @@ const ORDER: (keyof ClaimFile)[] = [
   'insurer_informed',
 ];
 
+// Long values read better across the full card width.
+const WIDE = new Set<keyof ClaimFile>(['incident_summary', 'policy_number', 'policy_name', 'location']);
+
 function display(key: keyof ClaimFile, claim: ClaimFile) {
   const value = claim[key];
   if (value === undefined || value === '') return null;
@@ -67,7 +70,7 @@ export function ClaimFileCard({ claim, recentlyUpdated = [], compact }: Props) {
           {filled.map((key) => (
             <div
               key={key}
-              className={`field${key === 'incident_summary' ? ' wide' : ''}`}
+              className={`field${WIDE.has(key) ? ' wide' : ''}`}
               data-fresh={recentlyUpdated.includes(key)}
             >
               <dt>{labelFor(key)}</dt>

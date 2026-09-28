@@ -21,11 +21,12 @@ const INTENT_LABEL: Record<CallReport['intent'], string> = {
 
 interface Props {
   snapshot: CallSnapshot;
+  policyName?: string;
   onNewCall: () => void;
 }
 
-export function SummaryView({ snapshot, onNewCall }: Props) {
-  const { transcript, caseState, startedAt, endedAt } = snapshot;
+export function SummaryView({ snapshot, policyName, onNewCall }: Props) {
+  const { transcript, caseState, startedAt, endedAt, languages, latencies } = snapshot;
   const [report, setReport] = useState<CallReport | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [failure, setFailure] = useState('');
@@ -55,6 +56,8 @@ export function SummaryView({ snapshot, onNewCall }: Props) {
       payout: caseState.payout,
       nextSteps: caseState.nextSteps,
       durationSeconds: Math.round(duration),
+      languages: languages.map((l) => l.name),
+      policyName,
     };
 
     const controller = new AbortController();
@@ -140,6 +143,21 @@ export function SummaryView({ snapshot, onNewCall }: Props) {
             )}
             {caseState.coverage && <span className="chip chip-accent">{verdictLabel(caseState.coverage.verdict)}</span>}
             {caseState.payout && <span className="chip">Est. payable {formatINR(caseState.payout.payable)}</span>}
+            {languages.length > 0 && (
+              <span className="chip">
+                <Icon name="globe" /> {languages.map((l) => l.name).join(', ')}
+              </span>
+            )}
+            {latencies.length > 0 && (
+              <span className="chip">
+                <Icon name="bolt" /> median reply {(medianOf(latencies) / 1000).toFixed(2)} s
+              </span>
+            )}
+            {policyName && (
+              <span className="chip">
+                <Icon name="doc" /> {policyName}
+              </span>
+            )}
           </div>
         </div>
         <div className="summary-actions no-print">
@@ -250,6 +268,11 @@ export function SummaryView({ snapshot, onNewCall }: Props) {
       </div>
     </main>
   );
+}
+
+function medianOf(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
 }
 
 function toPlainText(title: string, report: CallReport | null, snapshot: CallSnapshot, duration: number) {

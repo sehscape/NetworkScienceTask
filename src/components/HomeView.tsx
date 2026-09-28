@@ -1,107 +1,188 @@
-import { policies } from '../policies';
+import { useEffect, useState } from 'react';
+import { pageSnapshot } from '../docs/load';
+import type { PolicyDocument } from '../docs/types';
+import type { PolicyState } from '../hooks/usePolicyDocument';
+import { FadeHeading } from './FadeHeading';
 import { Icon, type IconName } from './Icon';
+import { PolicyDrop } from './PolicyDrop';
 
 interface Props {
+  policy: PolicyState;
   onStart: () => void;
+  onPrewarm: () => void;
   error?: string;
 }
 
-const STEPS: { icon: IconName; title: string; text: string }[] = [
+const STEPS: { icon: IconName; title: string; text: string; note: string }[] = [
   {
     icon: 'mic',
     title: 'Say what happened',
-    text: 'Describe the claim in your own words, in English, Hindi or a mix of both. Interrupt whenever you like.',
+    text: 'Describe the claim the way you would to a person, in any Indian language. Interrupt whenever you like.',
+    note: 'Replies start in under a second',
   },
   {
-    icon: 'screen',
+    icon: 'doc',
     title: 'Show the policy',
-    text: 'Share the tab with your policy document. The assistant reads the actual clause before it answers.',
+    text: 'Upload the whole policy, or share your screen. Scroll it right here while you talk; no switching tabs.',
+    note: 'PDFs, scans and phone photos',
   },
   {
     icon: 'waves',
     title: 'Hear a straight answer',
-    text: 'A short spoken explanation, with the clause pinned on screen and the payout worked out exactly.',
+    text: 'A short spoken answer, with the clause it rests on highlighted in your policy and the payout worked out exactly.',
+    note: 'Every answer cites its clause',
   },
 ];
 
-export function HomeView({ onStart, error }: Props) {
+const EXAMPLES: { lang: string; text: string }[] = [
+  { lang: 'English', text: 'My husband was admitted for dengue for three days. Are we covered?' },
+  { lang: 'हिन्दी', text: 'मेरी कार बाढ़ में बंद हो गई, क्या इंजन का क्लेम मिलेगा?' },
+  { lang: 'Hinglish', text: 'Room rent 8,000 tha, toh kitna claim milega?' },
+  { lang: 'मराठी', text: 'माझ्या वडिलांचं मोतीबिंदूचं ऑपरेशन आहे, क्लेम मिळेल का?' },
+  { lang: 'தமிழ்', text: 'என் பாலிசியில் காத்திருப்பு காலம் எவ்வளவு?' },
+];
+
+function LoadedPolicy({ doc, policy }: { doc: PolicyDocument; policy: PolicyState }) {
+  const [preview, setPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void pageSnapshot(doc, 1).then((jpeg) => !cancelled && jpeg && setPreview(`data:image/jpeg;base64,${jpeg}`));
+    return () => {
+      cancelled = true;
+    };
+  }, [doc]);
+
+  return (
+    <div className="loaded-policy">
+      <div className="loaded-preview">{preview ? <img src={preview} alt="First page of your policy" /> : <span className="loader" />}</div>
+      <div className="loaded-meta">
+        <span className="chip chip-accent">
+          <Icon name="check" /> Ready
+        </span>
+        <strong title={doc.name}>{doc.name}</strong>
+        <span>
+          {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}
+          {doc.ocr ? ' · text read with OCR' : ''}
+        </span>
+        <p>The assistant reads the whole policy when the call starts, and you can scroll it during the call.</p>
+        <div className="loaded-actions">
+          <button className="btn btn-quiet" onClick={policy.clear}>
+            <Icon name="close" />
+            Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function HomeView({ policy, onStart, onPrewarm, error }: Props) {
   return (
     <main className="home">
       <section className="hero">
-        <span className="chip chip-accent">
-          <Icon name="sparkle" /> Gemini Live · real-time voice + screen
-        </span>
-        <h1>
-          Talk through a claim.
-          <br />
-          <span className="hero-accent">Get the clause, not a wall of text.</span>
-        </h1>
-        <p className="lede">
-          Covered is a live voice assistant for insurance policies and claims. It listens as you speak, reads the policy
-          on your screen, and explains what it actually says.
-        </p>
+        <div className="hero-inner">
+          <div className="hero-copy">
+            <p className="eyebrow">Live policy &amp; claims assistant</p>
+            <FadeHeading lead="Talk through a claim." fade="Hear the clause that decides it." />
+            <p className="lede">
+              Covered listens as you speak, reads your actual policy, and answers out loud in your language, pointing at
+              the exact clause it relied on.
+            </p>
 
-        {error && (
-          <div className="alert" role="alert">
-            <Icon name="alert" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <div className="hero-actions">
-          <button className="btn btn-primary btn-lg" onClick={onStart}>
-            <Icon name="phone" />
-            {error ? 'Try again' : 'Start a call'}
-          </button>
-          <p className="hint">Uses your microphone. Headphones give the cleanest barge-in.</p>
-        </div>
-      </section>
-
-      <section className="steps-row" aria-label="How it works">
-        {STEPS.map((step, i) => (
-          <article key={step.title} className="glass step-card">
-            <span className="step-icon">
-              <Icon name={step.icon} />
-            </span>
-            <span className="step-index mono">0{i + 1}</span>
-            <h2>{step.title}</h2>
-            <p>{step.text}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="try" aria-label="Try it with a sample policy">
-        <div className="try-head">
-          <h2>No policy to hand?</h2>
-          <p>
-            Open a specimen policy in a new tab, start a call here, then share that tab. A few things you could ask:
-          </p>
-        </div>
-        <div className="try-grid">
-          {Object.values(policies).map((doc) => (
-            <article key={doc.id} className="glass try-card">
-              <div className="try-card-head">
-                <div>
-                  <span className="eyebrow">{doc.kind}</span>
-                  <h3>{doc.product}</h3>
-                </div>
-                <a className="btn btn-text" href={`/policy.html?doc=${doc.id}`} target="_blank" rel="noopener">
-                  Open <Icon name="external" />
-                </a>
+            <dl className="stats">
+              <div>
+                <dt>&lt;1s</dt>
+                <dd>reply time</dd>
               </div>
-              <ul>
-                {doc.prompts.map((p) => (
-                  <li key={p}>“{p}”</li>
-                ))}
-              </ul>
+              <div>
+                <dt>10+</dt>
+                <dd>Indian languages</dd>
+              </div>
+              <div>
+                <dt>0</dt>
+                <dd>clauses made up</dd>
+              </div>
+            </dl>
+
+            {error && (
+              <div className="alert" role="alert">
+                <Icon name="alert" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="hero-actions">
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={onStart}
+                onPointerEnter={onPrewarm}
+                onFocus={onPrewarm}
+                disabled={policy.status === 'loading'}
+              >
+                <Icon name="phone" />
+                {error ? 'Try again' : 'Start a call'}
+              </button>
+              <p className="hint">Uses your microphone · headphones give the cleanest barge-in</p>
+            </div>
+          </div>
+
+          <div className="hero-visual">
+            <div className="hero-card">
+              <p className="hero-card-label">Your policy · optional</p>
+              {policy.doc ? (
+                <LoadedPolicy doc={policy.doc} policy={policy} />
+              ) : (
+                <PolicyDrop
+                  status={policy.status}
+                  progress={policy.progress}
+                  error={policy.error}
+                  onFiles={(files) => void policy.fromFiles(files)}
+                  onSample={(s) => void policy.fromSample(s)}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <p className="eyebrow">How it works</p>
+        <FadeHeading as="h2" lead="Three steps," fade="no hold music." />
+        <div className="step-grid">
+          {STEPS.map((step, i) => (
+            <article key={step.title} className="card">
+              <span className="icon-tile">
+                <Icon name={step.icon} />
+              </span>
+              <h3>{step.title}</h3>
+              <p>{step.text}</p>
+              <p className="note">{step.note}</p>
+              <span className="numeral">0{i + 1}</span>
             </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="section">
+        <p className="eyebrow">Multilingual</p>
+        <FadeHeading as="h2" lead="Ask it the way" fade="you'd ask a person." />
+        <p className="section-lede">
+          It works out your language from your voice and answers in the same one, even if you switch halfway through.
+        </p>
+        <div className="examples">
+          {EXAMPLES.map((ex) => (
+            <div key={ex.lang} className="prompt-bar example">
+              <span className="example-lang">{ex.lang}</span>
+              <span className="example-text">“{ex.text}”</span>
+            </div>
           ))}
         </div>
       </section>
 
       <footer className="home-foot">
         <p>
-          Guidance only. Final claim decisions are made by your insurer. Specimen policies are fictional and for
+          Guidance only. Final claim decisions are made by your insurer. The specimen policies are fictional and for
           demonstration.
         </p>
       </footer>

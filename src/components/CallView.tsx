@@ -1,21 +1,22 @@
 import { useCallback, useState, type FormEvent, type RefObject } from 'react';
 import type { CallSnapshot } from '../hooks/useLiveCall';
-import { useSampleViewer } from '../hooks/useSampleViewer';
+import type { PolicyState } from '../hooks/usePolicyDocument';
 import type { LiveCall } from '../live/live-call';
 import { canShareScreen } from '../live/screen-share';
 import { policies } from '../policies';
 import { ClaimFileCard } from './ClaimFileCard';
 import { ClauseList } from './ClauseList';
 import { CoverageCard } from './CoverageCard';
+import { DocumentPanel } from './DocumentPanel';
 import { Icon } from './Icon';
 import { NextStepsCard } from './NextStepsCard';
 import { PayoutCard } from './PayoutCard';
-import { ScreenPanel } from './ScreenPanel';
 import { Transcript } from './Transcript';
 import { VoiceOrb } from './VoiceOrb';
 
 interface Props {
   snapshot: CallSnapshot;
+  policy: PolicyState;
   callRef: RefObject<LiveCall | null>;
   onEnd: () => void;
   onToggleMute: () => void;
@@ -24,9 +25,21 @@ interface Props {
   onSendText: (text: string) => void;
 }
 
-export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onStopShare, onSendText }: Props) {
-  const { phase, caseState, transcript, speaking, muted, screen, screenStats, activity } = snapshot;
-  const viewer = useSampleViewer();
+const DEFAULT_PROMPTS = [
+  'I was in hospital last week. How do I make a claim?',
+  'मेरी कार का एक्सीडेंट हुआ है, क्लेम कैसे करूँ?',
+  'Room rent limit kitna hai meri policy mein?',
+];
+
+const median = (values: number[]) => {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+};
+
+export function CallView(props: Props) {
+  const { snapshot, policy, callRef, onEnd, onToggleMute, onShare, onStopShare, onSendText } = props;
+  const { phase, caseState, transcript, speaking, muted, screen, activity, latencies, language } = snapshot;
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
 
@@ -55,7 +68,8 @@ export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onSt
   }[orbState];
 
   const latest = activity[0];
-  const suggestions = viewer ? policies[viewer.doc as keyof typeof policies]?.prompts : undefined;
+  const lastLatency = latencies[latencies.length - 1];
+  const suggestions = policy.doc?.sample ? policies[policy.doc.sample].prompts : DEFAULT_PROMPTS;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -66,10 +80,9 @@ export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onSt
 
   return (
     <main className="call">
-      <aside className="call-col call-left">
-        <ScreenPanel stream={screen} stats={screenStats} viewer={viewer} onShare={onShare} onStop={onStopShare} />
-        <ClauseList citations={caseState.citations} />
-      </aside>
+      <div className="call-col call-doc">
+        <DocumentPanel policy={policy} snapshot={snapshot} onShare={onShare} onStopShare={onStopShare} />
+      </div>
 
       <section className="call-col call-center">
         <div className="orb-wrap">
@@ -78,6 +91,31 @@ export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onSt
         <p className="call-state" aria-live="polite">
           {stateLabel}
         </p>
+
+        <div className="call-meters">
+          <span className="meter" title="Language detected from what you say. The assistant replies in the same one.">
+            <Icon name="globe" />
+            {language ? (
+              <>
+                {language.name}
+                {language.native !== language.name && <span className="meter-native">{language.native}</span>}
+              </>
+            ) : (
+              'Any language'
+            )}
+          </span>
+          <span className="meter" title="Time from when you stop talking to the first sound of the reply">
+            <Icon name="bolt" />
+            {lastLatency ? (
+              <>
+                {(lastLatency / 1000).toFixed(2)} s reply
+                {latencies.length > 2 && <span className="meter-native">median {(median(latencies) / 1000).toFixed(2)} s</span>}
+              </>
+            ) : (
+              'Reply time'
+            )}
+          </span>
+        </div>
 
         <div className="activity-slot" aria-live="polite">
           {/* Re-keyed per tool call; CSS fades it in, holds, then fades it out. */}
@@ -94,13 +132,9 @@ export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onSt
           empty={
             phase === 'live' && (
               <div className="suggest">
-                <p className="eyebrow">Try saying</p>
+                <p className="eyebrow">Try saying, in any language</p>
                 <ul>
-                  {(suggestions ?? [
-                    'I was in hospital last week. How do I make a claim?',
-                    'What does my policy say about room rent?',
-                    'Mera accident hua hai, claim kaise karu?',
-                  ]).map((s) => (
+                  {suggestions.slice(0, 3).map((s) => (
                     <li key={s}>“{s}”</li>
                   ))}
                 </ul>
@@ -116,7 +150,7 @@ export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onSt
         )}
 
         {typing && (
-          <form className="type-bar glass" onSubmit={submit}>
+          <form className="prompt-bar type-bar" onSubmit={submit}>
             <input
               autoFocus
               value={draft}
@@ -124,13 +158,13 @@ export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onSt
               placeholder="Type instead of speaking…"
               aria-label="Message"
             />
-            <button className="icon-btn" type="submit" aria-label="Send" disabled={!draft.trim()}>
+            <button className="send-btn" type="submit" aria-label="Send" disabled={!draft.trim()}>
               <Icon name="send" />
             </button>
           </form>
         )}
 
-        <div className="dock glass glass-strong" role="toolbar" aria-label="Call controls">
+        <div className="dock" role="toolbar" aria-label="Call controls">
           <button
             className="icon-btn"
             aria-pressed={muted}
@@ -145,7 +179,7 @@ export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onSt
               className="icon-btn"
               aria-pressed={!!screen}
               aria-label={screen ? 'Stop sharing screen' : 'Share screen'}
-              title={screen ? 'Stop sharing' : 'Share your policy'}
+              title={screen ? 'Stop sharing' : 'Share a tab or window'}
               onClick={screen ? onStopShare : onShare}
             >
               <Icon name={screen ? 'screenOff' : 'screen'} />
@@ -168,10 +202,11 @@ export function CallView({ snapshot, callRef, onEnd, onToggleMute, onShare, onSt
         </div>
       </section>
 
-      <aside className="call-col call-right">
+      <aside className="call-col call-rail">
         <ClaimFileCard claim={caseState.claim} recentlyUpdated={caseState.recentlyUpdated} />
         <CoverageCard coverage={caseState.coverage} />
         <PayoutCard payout={caseState.payout} />
+        <ClauseList citations={caseState.citations} />
         <NextStepsCard next={caseState.nextSteps} />
       </aside>
     </main>

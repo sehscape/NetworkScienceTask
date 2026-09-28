@@ -1,6 +1,7 @@
 import { ThinkingLevel } from '@google/genai';
 import type { CallReport, ReportRequest } from '../shared/types.js';
 import { createClient, TEXT_FALLBACK_MODELS, TEXT_MODEL } from './_lib/gemini.js';
+import { firstSuccessful } from './_lib/hedge.js';
 import { errorResponse, isCrossSite, json, readJson } from './_lib/http.js';
 
 /**
@@ -64,7 +65,7 @@ Rules:
 - Use only facts present in the input. If something is unknown, list it under open_questions instead of guessing.
 - Clause references must come from the citations provided. Do not invent clause numbers.
 - Do not restate or recompute rupee amounts beyond what the payout data says.
-- Write in clear, neutral English even if the call was in another language.
+- Write in clear, neutral English even if the call was in another language, and mention in the summary which language(s) the caller used.
 - Never include Aadhaar, PAN, bank or card numbers even if they appear in the transcript.`;
 
 function validate(body: ReportRequest | null): body is ReportRequest {
@@ -91,6 +92,8 @@ export async function POST(request: Request) {
     coverage: body.coverage ?? null,
     payout_estimate: body.payout ?? null,
     next_steps: body.nextSteps ?? null,
+    caller_languages: Array.isArray(body.languages) ? body.languages.slice(0, 6).map(String) : [],
+    policy_document: typeof body.policyName === 'string' ? body.policyName.slice(0, 120) : null,
   };
 
   let ai;
@@ -101,10 +104,9 @@ export async function POST(request: Request) {
   }
 
   const prompt = `CALL DATA\n${JSON.stringify(context, null, 2)}\n\nTRANSCRIPT\n${transcript || '(empty)'}`;
-  let lastError: unknown;
 
-  for (const model of [TEXT_MODEL, ...TEXT_FALLBACK_MODELS]) {
-    try {
+  try {
+    const { value: report, model } = await firstSuccessful([TEXT_MODEL, ...TEXT_FALLBACK_MODELS], async (model, signal) => {
       const response = await ai.models.generateContent({
         model,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -112,29 +114,14 @@ export async function POST(request: Request) {
           systemInstruction: INSTRUCTIONS,
           responseMimeType: 'application/json',
           responseJsonSchema: REPORT_SCHEMA,
-          ...(model.startsWith('gemini-3') ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
+          abortSignal: signal,
+          ...(model.startsWith('gemini-3') ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } } : {}),
         },
       });
-
-      const report = JSON.parse(response.text ?? '') as CallReport;
-      return json({ report, model });
-    } catch (err) {
-      lastError = err;
-      if (!shouldFallBack(err)) break;
-      console.warn(`[report] ${model} unavailable, trying the next model`);
-    }
+      return JSON.parse(response.text ?? '') as CallReport;
+    }, { hedgeAfterMs: 3_500 });
+    return json({ report, model });
+  } catch (err) {
+    return errorResponse(err);
   }
-
-  return errorResponse(lastError);
-}
-
-/**
- * The free tier allows only a handful of requests per day per model, and
- * preview models get "high demand" 503s. Each model has its own quota, so
- * moving down the list keeps the hand-off note working.
- */
-function shouldFallBack(err: unknown) {
-  if (err instanceof SyntaxError) return true; // malformed JSON, another model may do better
-  const status = (err as { status?: unknown })?.status;
-  return status === 429 || status === 500 || status === 503 || status === 404;
 }
