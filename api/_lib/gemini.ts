@@ -2,6 +2,10 @@ import { GoogleGenAI } from '@google/genai';
 
 export const LIVE_MODEL = process.env.GEMINI_LIVE_MODEL || 'gemini-3.1-flash-live-preview';
 export const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-3-flash-preview';
+export const TEXT_FALLBACK_MODELS = (process.env.GEMINI_TEXT_FALLBACKS || 'gemini-3.1-flash-lite,gemini-flash-latest')
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
 export const VOICE = process.env.GEMINI_VOICE || 'Kore';
 
 export class MissingKeyError extends Error {

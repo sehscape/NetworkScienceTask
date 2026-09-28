@@ -1,12 +1,13 @@
 import { ThinkingLevel } from '@google/genai';
 import type { CallReport, ReportRequest } from '../shared/types.js';
-import { createClient, TEXT_MODEL } from './_lib/gemini.js';
+import { createClient, TEXT_FALLBACK_MODELS, TEXT_MODEL } from './_lib/gemini.js';
 import { errorResponse, isCrossSite, json, readJson } from './_lib/http.js';
 
 /**
  * POST /api/report
  *
- * Turn-based step after the live call: gemini-3-flash-preview reads the
+ * Turn-based step after the live call: gemini-3-flash-preview (with lighter
+ * fallbacks when its free-tier quota runs out) reads the
  * transcript plus everything the live model recorded through tools, and writes
  * a structured hand-off note for the claims desk.
  *
@@ -92,27 +93,48 @@ export async function POST(request: Request) {
     next_steps: body.nextSteps ?? null,
   };
 
+  let ai;
   try {
-    const ai = createClient();
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `CALL DATA\n${JSON.stringify(context, null, 2)}\n\nTRANSCRIPT\n${transcript || '(empty)'}` }],
-        },
-      ],
-      config: {
-        systemInstruction: INSTRUCTIONS,
-        responseMimeType: 'application/json',
-        responseJsonSchema: REPORT_SCHEMA,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
-
-    const report = JSON.parse(response.text ?? '') as CallReport;
-    return json({ report, model: TEXT_MODEL });
+    ai = createClient();
   } catch (err) {
     return errorResponse(err);
   }
+
+  const prompt = `CALL DATA\n${JSON.stringify(context, null, 2)}\n\nTRANSCRIPT\n${transcript || '(empty)'}`;
+  let lastError: unknown;
+
+  for (const model of [TEXT_MODEL, ...TEXT_FALLBACK_MODELS]) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          systemInstruction: INSTRUCTIONS,
+          responseMimeType: 'application/json',
+          responseJsonSchema: REPORT_SCHEMA,
+          ...(model.startsWith('gemini-3') ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
+        },
+      });
+
+      const report = JSON.parse(response.text ?? '') as CallReport;
+      return json({ report, model });
+    } catch (err) {
+      lastError = err;
+      if (!shouldFallBack(err)) break;
+      console.warn(`[report] ${model} unavailable, trying the next model`);
+    }
+  }
+
+  return errorResponse(lastError);
+}
+
+/**
+ * The free tier allows only a handful of requests per day per model, and
+ * preview models get "high demand" 503s. Each model has its own quota, so
+ * moving down the list keeps the hand-off note working.
+ */
+function shouldFallBack(err: unknown) {
+  if (err instanceof SyntaxError) return true; // malformed JSON, another model may do better
+  const status = (err as { status?: unknown })?.status;
+  return status === 429 || status === 500 || status === 503 || status === 404;
 }

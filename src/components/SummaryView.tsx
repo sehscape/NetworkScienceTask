@@ -29,6 +29,7 @@ export function SummaryView({ snapshot, onNewCall }: Props) {
   const [report, setReport] = useState<CallReport | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [failure, setFailure] = useState('');
+  const [writtenBy, setWrittenBy] = useState('');
   const [copied, setCopied] = useState(false);
 
   const duration = startedAt && endedAt ? (endedAt - startedAt) / 1000 : 0;
@@ -67,6 +68,7 @@ export function SummaryView({ snapshot, onNewCall }: Props) {
         const body = await res.json().catch(() => ({}));
         if (!res.ok || !body.report) throw new Error(body.message ?? 'The summary service did not respond.');
         setReport(body.report);
+        setWrittenBy(body.model ?? '');
         setStatus('ready');
       })
       .catch((err) => {
@@ -174,7 +176,7 @@ export function SummaryView({ snapshot, onNewCall }: Props) {
                 <span className="skeleton" />
                 <span className="skeleton" />
                 <span className="skeleton short" />
-                <p className="hint">Writing the hand-off note with Gemini 3 Flash…</p>
+                <p className="hint">Writing the hand-off note…</p>
               </div>
             ) : (
               <p className="summary-text">
@@ -182,6 +184,12 @@ export function SummaryView({ snapshot, onNewCall }: Props) {
               </p>
             )}
             {report?.coverage_explanation && <p className="summary-text muted">{report.coverage_explanation}</p>}
+            {writtenBy && (
+              <p className="hint">
+                Written by <span className="mono">{writtenBy}</span> from the transcript. Quotes and amounts are taken
+                from the call as-is.
+              </p>
+            )}
           </section>
 
           <ClauseList citations={caseState.citations} notes={notes} empty="No clauses were cited on this call." />
