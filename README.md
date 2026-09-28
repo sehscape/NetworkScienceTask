@@ -4,7 +4,7 @@
 
 Built on the **Gemini Live API** (`gemini-3.1-flash-live-preview`) for the NSOffice AI Centre of Excellence assignment, idea #2: *Live Policy and Claims Voice Assistant (BFSI / Insurance)*.
 
-**Live demo:** _add the Vercel URL here after deploying_
+**Live demo:** https://network-science-task.vercel.app
 
 ---
 
@@ -113,6 +113,7 @@ Open **http://localhost:5173** in Chrome or Edge.
 | `GEMINI_LIVE_MODEL` | no       | `gemini-3.1-flash-live-preview` | Real-time voice + screen model                           |
 | `GEMINI_TEXT_MODEL` | no       | `gemini-3-flash-preview`        | Post-call hand-off note                                  |
 | `GEMINI_VOICE`      | no       | `Kore`                          | Prebuilt voice for the assistant                         |
+| `GEMINI_TEXT_FALLBACKS` | no   | `gemini-3.1-flash-lite,gemini-flash-latest` | Tried in order if the text model is out of quota or overloaded |
 
 `.env` is git-ignored. Only `.env.example` is committed.
 
@@ -156,6 +157,7 @@ src/
 
 - Best in **Chrome or Edge on desktop**. Phones can't share their screen from a browser; voice still works.
 - Clause highlighting only works with the bundled sample policies, which share the app's origin. With your own PDF, the assistant still reads and cites the clause; it just can't scroll your PDF viewer.
+- The free tier allows only about 20 `gemini-3-flash-preview` requests per day per project. When that runs out (or the model reports high demand), the hand-off note falls back to lighter Flash models, and the summary shows which model wrote it.
 - `gemini-3.1-flash-live-preview` only supports blocking function calls, so the model waits for each tool reply. All handlers run locally and return instantly, so the pause isn't noticeable.
 - This is guidance, not a claim decision. **Kestrel General Insurance is fictional** and the specimen policies were written for this demo.
 
