@@ -1,0 +1,75 @@
+/*
+ * NSOffice glass UI tokens
+ * Electric Blue is the only accent. Everything else is neutral ink on dark glass.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Type */
+  --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 21px;
+  --text-2xl: 28px;
+  --text-3xl: 40px;
+  --text-4xl: 56px;
+
+  /* Accent: Electric Blue */
+  --blue: #0a66ff;
+  --blue-rgb: 10 102 255;
+  --blue-bright: #4d8dff; /* text and icons on dark glass */
+  --blue-soft: rgb(var(--blue-rgb) / 0.14);
+  --blue-line: rgb(var(--blue-rgb) / 0.5);
+  --blue-glow: 0 10px 36px -8px rgb(var(--blue-rgb) / 0.65);
+
+  /* Neutrals */
+  --bg: #05070d;
+  --ink: #f3f5fa;
+  --ink-2: rgb(243 245 250 / 0.74);
+  --ink-3: rgb(243 245 250 / 0.52);
+  --ink-4: rgb(243 245 250 / 0.3);
+  --hairline: rgb(255 255 255 / 0.08);
+  --hairline-strong: rgb(255 255 255 / 0.14);
+  --fill-1: rgb(255 255 255 / 0.04);
+  --fill-2: rgb(255 255 255 / 0.07);
+  --fill-3: rgb(255 255 255 / 0.11);
+
+  /* Glass */
+  --glass-bg: rgb(22 28 44 / 0.5);
+  --glass-bg-strong: rgb(26 33 52 / 0.72);
+  --glass-blur: 28px;
+  --glass-saturate: 170%;
+  --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  --glass-shadow: 0 30px 60px -30px rgb(0 0 0 / 0.75);
+
+  /* Spacing (4pt grid, Apple-like generous rhythm) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* Shape */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 160ms;
+  --dur-med: 280ms;
+  --dur-slow: 560ms;
+}
