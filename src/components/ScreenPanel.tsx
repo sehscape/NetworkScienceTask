@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import type { ScreenStats } from '../live/screen-share';
-import { canShareScreen } from '../live/screen-share';
 import { Icon } from './Icon';
 
 interface Props {
@@ -20,23 +19,19 @@ export function ScreenPanel({ stream, stats, viewer, onShare, onStop }: Props) {
 
   if (!stream) {
     return (
-      <section className="glass panel screen-empty" aria-label="Screen sharing">
-        <div className="screen-empty-icon">
-          <Icon name="doc" />
-        </div>
-        <h3>Show your policy</h3>
+      <div className="screen-empty">
+        <span className="icon-tile">
+          <Icon name="screen" />
+        </span>
+        <h3>Show a document that isn&rsquo;t a file</h3>
         <p>
-          Share the tab or window with your policy document. The assistant reads the clause on screen before it
-          answers.
+          Share a tab or window, like your insurer&rsquo;s portal or an email with your policy. The assistant watches it
+          live and reads the clause before it answers.
         </p>
-        {canShareScreen() ? (
-          <button className="btn btn-quiet" onClick={onShare}>
-            <Icon name="screen" />
-            Share screen
-          </button>
-        ) : (
-          <p className="hint">Screen sharing needs Chrome, Edge or Firefox on a computer.</p>
-        )}
+        <button className="btn btn-outline" onClick={onShare}>
+          <Icon name="screen" />
+          Share a tab or window
+        </button>
         <p className="hint">
           {viewer ? (
             <>
@@ -44,20 +39,20 @@ export function ScreenPanel({ stream, stats, viewer, onShare, onStop }: Props) {
             </>
           ) : (
             <>
-              No policy handy?{' '}
+              Want to try it?{' '}
               <a href="/policy.html?doc=health" target="_blank" rel="noopener">
-                Open a sample
+                Open a sample policy in a new tab
               </a>
             </>
           )}
         </p>
-      </section>
+      </div>
     );
   }
 
   return (
-    <section className="glass panel screen-live" aria-label="Your shared screen">
-      <div className="panel-head">
+    <div className="screen-live">
+      <div className="screen-live-head">
         <span className="chip chip-accent">
           <span className="live-dot" /> Assistant can see this
         </span>
@@ -74,6 +69,6 @@ export function ScreenPanel({ stream, stats, viewer, onShare, onStop }: Props) {
         {stats.sent} {stats.sent === 1 ? 'frame' : 'frames'} sent · {stats.skipped} unchanged skipped
         {viewer && <> · clauses light up in the sample tab</>}
       </p>
-    </section>
+    </div>
   );
 }

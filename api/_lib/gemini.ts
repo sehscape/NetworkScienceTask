@@ -6,6 +6,9 @@ export const TEXT_FALLBACK_MODELS = (process.env.GEMINI_TEXT_FALLBACKS || 'gemin
   .split(',')
   .map((m) => m.trim())
   .filter(Boolean);
+
+// OCR of photographed pages: the lite model is fast and has the most free quota.
+export const EXTRACT_MODELS = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3-flash-preview'];
 export const VOICE = process.env.GEMINI_VOICE || 'Kore';
 
 export class MissingKeyError extends Error {

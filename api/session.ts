@@ -1,5 +1,5 @@
 import { createClient, LIVE_MODEL } from './_lib/gemini.js';
-import { buildLiveConfig } from './_lib/live-config.js';
+import { buildLiveConfig, MAX_POLICY_CHARS, type PolicyContext } from './_lib/live-config.js';
 import { errorResponse, isCrossSite, json, readJson } from './_lib/http.js';
 
 /**
@@ -9,15 +9,31 @@ import { errorResponse, isCrossSite, json, readJson } from './_lib/http.js';
  * WebSocket to Gemini directly with it (serverless functions can't hold a
  * socket open), and the real API key never leaves the server.
  *
- * Body (optional): { resumeHandle } to continue a session after the server
- * recycles the connection.
+ * Body (all optional):
+ *   resumeHandle  continue a session after the server recycles the connection
+ *   policy        { name, text } of a policy the caller loaded before the call;
+ *                 it goes into the locked system prompt
  */
+interface Body {
+  resumeHandle?: unknown;
+  policy?: { name?: unknown; text?: unknown };
+}
+
 export async function POST(request: Request) {
   if (isCrossSite(request)) return json({ error: 'forbidden' }, 403);
 
-  const body = (await readJson<{ resumeHandle?: unknown }>(request)) ?? {};
+  const body = (await readJson<Body>(request, 400_000)) ?? {};
   const resumeHandle =
     typeof body.resumeHandle === 'string' && body.resumeHandle.length < 2048 ? body.resumeHandle : undefined;
+
+  let policy: PolicyContext | undefined;
+  if (body.policy && typeof body.policy.text === 'string' && body.policy.text.trim()) {
+    if (body.policy.text.length > MAX_POLICY_CHARS) return json({ error: 'policy_too_long' }, 413);
+    policy = {
+      name: String(body.policy.name ?? 'Policy document').slice(0, 120).replace(/["<>]/g, ''),
+      text: body.policy.text,
+    };
+  }
 
   try {
     const ai = createClient({ alpha: true });
@@ -32,7 +48,7 @@ export async function POST(request: Request) {
         newSessionExpireTime: new Date(now + 60_000).toISOString(),
         liveConnectConstraints: {
           model: LIVE_MODEL,
-          config: buildLiveConfig(resumeHandle),
+          config: buildLiveConfig({ resumeHandle, policy }),
         },
         httpOptions: { apiVersion: 'v1alpha' },
       },
