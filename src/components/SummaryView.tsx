@@ -158,6 +158,12 @@ export function SummaryView({ snapshot, policyName, onNewCall }: Props) {
                 <Icon name="doc" /> {policyName}
               </span>
             )}
+            {caseState.declined.length > 0 && (
+              <span className="chip" title={caseState.declined.map((d) => d.topic).join(', ')}>
+                <Icon name="shield" /> {caseState.declined.length} off-topic{' '}
+                {caseState.declined.length === 1 ? 'request' : 'requests'} declined
+              </span>
+            )}
           </div>
         </div>
         <div className="summary-actions no-print">

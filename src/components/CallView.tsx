@@ -1,6 +1,7 @@
-import { useCallback, useState, type FormEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import type { CallSnapshot } from '../hooks/useLiveCall';
 import type { PolicyState } from '../hooks/usePolicyDocument';
+import type { Citation } from '../live/case-tools';
 import type { LiveCall } from '../live/live-call';
 import { canShareScreen } from '../live/screen-share';
 import { policies } from '../policies';
@@ -8,6 +9,7 @@ import { ClaimFileCard } from './ClaimFileCard';
 import { ClauseList } from './ClauseList';
 import { CoverageCard } from './CoverageCard';
 import { DocumentPanel } from './DocumentPanel';
+import type { FocusTarget, ViewerFocus } from './DocumentViewer';
 import { Icon } from './Icon';
 import { NextStepsCard } from './NextStepsCard';
 import { PayoutCard } from './PayoutCard';
@@ -31,6 +33,20 @@ const DEFAULT_PROMPTS = [
   'Room rent limit kitna hai meri policy mein?',
 ];
 
+const LONG_POLICY_PROMPTS = [
+  'My mother needs cataract surgery. Is it covered in our first year?',
+  'Stroke ke baad critical illness ka paisa milega?',
+  'How many days do I have to send the hospital bills?',
+];
+
+const citationTarget = (c: Citation): FocusTarget => ({
+  label: c.clause_ref,
+  ref: c.clause_ref,
+  quote: c.quote,
+  location: c.location,
+  cited: true,
+});
+
 const median = (values: number[]) => {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -42,6 +58,14 @@ export function CallView(props: Props) {
   const { phase, caseState, transcript, speaking, muted, screen, activity, latencies, language } = snapshot;
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
+
+  // The viewer follows the assistant's citations, and the caller's own picks.
+  const [focus, setFocus] = useState<ViewerFocus>();
+  const focusSeq = useRef(0);
+  const focusOn = useCallback((target: FocusTarget) => setFocus({ target, nonce: ++focusSeq.current }), []);
+  useEffect(() => {
+    if (snapshot.focus) focusOn(citationTarget(snapshot.focus.citation));
+  }, [snapshot.focus, focusOn]);
 
   const getLevels = useCallback(
     () => ({ input: callRef.current?.inputLevel ?? 0, output: callRef.current?.outputLevel ?? 0 }),
@@ -69,7 +93,8 @@ export function CallView(props: Props) {
 
   const inConversation = transcript.length > 0;
   const lastLatency = latencies[latencies.length - 1];
-  const suggestions = policy.doc?.sample ? policies[policy.doc.sample].prompts : DEFAULT_PROMPTS;
+  const sample = policy.doc?.sample;
+  const suggestions = !sample ? DEFAULT_PROMPTS : sample === 'supreme' ? LONG_POLICY_PROMPTS : policies[sample].prompts;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -81,7 +106,15 @@ export function CallView(props: Props) {
   return (
     <main className="call">
       <div className="call-col call-doc">
-        <DocumentPanel policy={policy} snapshot={snapshot} onShare={onShare} onStopShare={onStopShare} />
+        <DocumentPanel
+          policy={policy}
+          snapshot={snapshot}
+          focus={focus}
+          onFocus={focusOn}
+          onAsk={phase === 'live' ? onSendText : undefined}
+          onShare={onShare}
+          onStopShare={onStopShare}
+        />
       </div>
 
       <section className="call-col call-center" data-compact={inConversation}>
@@ -204,7 +237,10 @@ export function CallView(props: Props) {
         <ClaimFileCard claim={caseState.claim} recentlyUpdated={caseState.recentlyUpdated} />
         <CoverageCard coverage={caseState.coverage} />
         <PayoutCard payout={caseState.payout} />
-        <ClauseList citations={caseState.citations} />
+        <ClauseList
+          citations={caseState.citations}
+          onSelect={policy.doc ? (c) => focusOn(citationTarget(c)) : undefined}
+        />
         <NextStepsCard next={caseState.nextSteps} />
       </aside>
     </main>

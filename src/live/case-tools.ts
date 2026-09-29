@@ -7,12 +7,23 @@ import type {
   NextStepsArgs,
   PayoutEstimate,
 } from '../../shared/types';
+import { verifyQuote, type PolicyIndex, type QuoteCheck } from '../docs/search';
+import type { ClauseHit, PolicyChunk } from '../docs/types';
 import { formatINR, toNumber } from '../lib/format';
 import { redact } from '../lib/redact';
 import { calculatePayout } from './payout';
 
 export interface Citation extends CiteClauseArgs {
   id: string;
+  at: number;
+  /** Where the clause is in the loaded document, when the app found it. */
+  location?: ClauseHit;
+  /** Whether the quote was found word for word in that clause. */
+  check?: QuoteCheck['status'];
+}
+
+export interface Declined {
+  topic: string;
   at: number;
 }
 
@@ -24,9 +35,11 @@ export interface CaseState {
   coverage?: AssessCoverageArgs;
   payout?: PayoutEstimate;
   nextSteps?: NextStepsArgs;
+  /** Requests the assistant turned down as outside the policy. */
+  declined: Declined[];
 }
 
-export const emptyCase = (): CaseState => ({ claim: {}, recentlyUpdated: [], citations: [] });
+export const emptyCase = (): CaseState => ({ claim: {}, recentlyUpdated: [], citations: [], declined: [] });
 
 export interface ToolResult {
   state: CaseState;
@@ -90,35 +103,119 @@ function updateClaim(state: CaseState, args: Record<string, unknown>): ToolResul
   };
 }
 
-function citeClause(state: CaseState, args: CiteClauseArgs): ToolResult {
-  const ref = String(args.clause_ref || 'unnumbered').trim();
-  const citation: Citation = {
-    id: nextId(),
-    at: Date.now(),
-    clause_ref: ref,
-    title: args.title,
-    quote: String(args.quote ?? '').trim(),
-    meaning: String(args.meaning ?? '').trim(),
-    effect: args.effect,
-  };
+const SEARCH_RESULTS = 4;
 
-  // Re-citing the same clause refreshes it and moves it to the top instead of duplicating.
-  const others = state.citations.filter((c) => c.clause_ref.toLowerCase() !== ref.toLowerCase());
-  const citations = [citation, ...others];
+function searchPolicy(state: CaseState, args: Record<string, unknown>, index?: PolicyIndex): ToolResult {
+  if (!index) {
+    return {
+      state,
+      response: {
+        error:
+          'No policy document is loaded in the app. If the caller is sharing their screen, read it there; otherwise ask them to upload their policy.',
+      },
+      activity: 'No policy to search',
+    };
+  }
 
+  const query = String(args.query ?? '').trim();
+  const ids = Array.isArray(args.clause_ids) ? args.clause_ids.map(String).slice(0, 6) : [];
+  const found = [
+    ...ids.map((id) => index.byId(id)),
+    ...(query ? index.search(query, SEARCH_RESULTS).map((hit) => hit.chunk) : []),
+  ].filter((c): c is PolicyChunk => !!c);
+  const results = [...new Map(found.map((c) => [c.id, c])).values()].slice(0, 6);
+
+  // The live model follows instructions best when they arrive with the data,
+  // so the results lead with a one-line reminder of what to do next.
   return {
-    state: { ...state, citations, recentlyUpdated: [] },
-    response: { pinned: true, clause_ref: ref, clauses_pinned: citations.length },
-    activity: `Clause ${ref} highlighted`,
+    state,
+    response: results.length
+      ? {
+          next:
+            'First call cite_clause for the clause you will rely on (its clause_id and exact words from its text), then answer the caller briefly from it. Take their plan, members, sum insured and dates from the schedule at the top of the policy; do not ask for them.',
+          results: results.map((c) => ({
+            clause_id: c.id,
+            clause_ref: c.ref,
+            heading: c.heading,
+            section: c.section,
+            page: c.location.page,
+            text: c.text,
+          })),
+        }
+      : {
+          next: 'Nothing matches. Try different keywords once; if there is still nothing, tell the caller their policy does not mention it.',
+          results: [],
+        },
+    activity: query ? `Searched the policy for “${query}”` : `Read ${ids.join(', ')}`,
   };
 }
 
-function assessCoverage(state: CaseState, args: AssessCoverageArgs): ToolResult {
+function citeClause(state: CaseState, args: CiteClauseArgs, index?: PolicyIndex): ToolResult {
+  const quote = String(args.quote ?? '').trim();
+  const chunk = index?.resolve({ id: args.clause_id, ref: args.clause_ref, quote });
+  const check = chunk ? verifyQuote(chunk, quote) : undefined;
+  const ref = String(args.clause_ref || chunk?.ref || chunk?.heading.slice(0, 40) || 'unnumbered').trim();
+
+  const citation: Citation = {
+    id: nextId(),
+    at: Date.now(),
+    clause_id: chunk?.id ?? args.clause_id,
+    clause_ref: ref,
+    title: args.title,
+    // A paraphrase is swapped for the policy's real sentence, so the screen
+    // only ever shows words that are actually in the document.
+    quote: check?.status === 'closest' ? check.text : quote,
+    meaning: String(args.meaning ?? '').trim(),
+    effect: args.effect,
+    location: chunk?.location,
+    check: check?.status,
+  };
+
+  // Re-citing the same clause refreshes it and moves it to the top instead of duplicating.
+  const key = (c: Citation) => c.clause_id ?? c.clause_ref.toLowerCase();
+  const others = state.citations.filter((c) => key(c) !== key(citation));
+  const citations = [citation, ...others];
+
+  const response: Record<string, unknown> = { pinned: true, clause_ref: ref, clauses_pinned: citations.length };
+  if (chunk) response.page = chunk.location.page;
+  if (check?.status === 'closest') {
+    response.quote_check = 'Your quote was not word for word. The caller sees this sentence from the clause instead.';
+    response.shown_quote = check.text;
+  } else if (check?.status === 'none') {
+    response.quote_check = 'Your quote is not in this clause. Re-read it before you rely on it, and correct yourself if needed.';
+    response.clause_text = chunk!.text.slice(0, 1200);
+  } else if (index && !chunk) {
+    response.pinned = false;
+    response.quote_check = 'No clause like that exists in the loaded policy. Use search_policy to find the right one.';
+  }
+
+  return {
+    state: { ...state, citations, recentlyUpdated: [] },
+    response,
+    activity: chunk || !index ? `Clause ${ref} highlighted` : `Clause ${ref} not found`,
+  };
+}
+
+function flagOutOfScope(state: CaseState, args: Record<string, unknown>): ToolResult {
+  const topic = String(args.topic ?? 'off-topic request').trim().slice(0, 60);
+  return {
+    state: { ...state, declined: [...state.declined, { topic, at: Date.now() }], recentlyUpdated: [] },
+    response: { recorded: true },
+    activity: 'Kept to your policy',
+  };
+}
+
+function assessCoverage(state: CaseState, args: AssessCoverageArgs, index?: PolicyIndex): ToolResult {
+  // The model sometimes lists clause ids ("C71"); show the printed number instead.
+  const printed = (ref: string) => {
+    const chunk = index?.byId(ref);
+    return chunk ? (chunk.ref ?? `page ${chunk.location.page}`) : ref;
+  };
   const coverage: AssessCoverageArgs = {
     verdict: args.verdict ?? 'need_more_info',
     summary: String(args.summary ?? ''),
     reasons: Array.isArray(args.reasons) ? args.reasons.map(String) : [],
-    clause_refs: Array.isArray(args.clause_refs) ? args.clause_refs.map(String) : [],
+    clause_refs: Array.isArray(args.clause_refs) ? args.clause_refs.map((r) => printed(String(r))) : [],
     confidence: args.confidence,
   };
   return {
@@ -198,15 +295,24 @@ function setNextSteps(state: CaseState, args: NextStepsArgs): ToolResult {
   };
 }
 
-export function runTool(name: string, args: Record<string, unknown> | undefined, state: CaseState): ToolResult {
+export function runTool(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  state: CaseState,
+  index?: PolicyIndex,
+): ToolResult {
   const a = args ?? {};
   switch (name) {
+    case 'search_policy':
+      return searchPolicy(state, a, index);
     case 'update_claim':
       return updateClaim(state, a);
     case 'cite_clause':
-      return citeClause(state, a as unknown as CiteClauseArgs);
+      return citeClause(state, a as unknown as CiteClauseArgs, index);
+    case 'flag_out_of_scope':
+      return flagOutOfScope(state, a);
     case 'assess_coverage':
-      return assessCoverage(state, a as unknown as AssessCoverageArgs);
+      return assessCoverage(state, a as unknown as AssessCoverageArgs, index);
     case 'estimate_payout':
       return estimatePayout(state, a as unknown as EstimatePayoutArgs);
     case 'set_next_steps':

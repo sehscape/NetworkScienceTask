@@ -22,6 +22,8 @@ export interface ClaimFile {
 export type ClauseEffect = 'supports' | 'limits' | 'excludes' | 'procedure' | 'neutral';
 
 export interface CiteClauseArgs {
+  /** Id of the clause in the app's copy of the policy, e.g. "C12". */
+  clause_id?: string;
   clause_ref: string;
   title?: string;
   quote: string;
@@ -78,6 +80,29 @@ export interface NextStepsArgs {
   steps: string[];
   documents?: string[];
   deadline?: string;
+}
+
+// ---- Policy at a glance (/api/digest) ----
+
+export interface DigestFact {
+  label: string;
+  value: string;
+  /** Id of the clause that states it, e.g. "C12". */
+  clause_id: string;
+}
+
+export interface DigestWatchOut {
+  title: string;
+  detail: string;
+  clause_id: string;
+}
+
+export interface PolicyDigest {
+  product: string;
+  kind: ClaimType;
+  one_liner: string;
+  key_facts: DigestFact[];
+  watch_outs: DigestWatchOut[];
 }
 
 // ---- Post-call report (/api/report) ----

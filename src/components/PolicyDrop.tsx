@@ -1,4 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
+import type { SampleName } from '../docs/load';
 import type { DocStatus } from '../hooks/usePolicyDocument';
 import { Icon } from './Icon';
 
@@ -7,7 +8,7 @@ interface Props {
   progress: string;
   error: string;
   onFiles: (files: File[]) => void;
-  onSample: (sample: 'health' | 'motor') => void;
+  onSample: (sample: SampleName) => void;
 }
 
 /** Drop a whole policy (PDF or photos) here, or pick one of the specimens. */
@@ -83,6 +84,16 @@ export function PolicyDrop({ status, progress, error, onFiles, onSample }: Props
         ·{' '}
         <button type="button" className="link-btn" disabled={busy} onClick={() => onSample('motor')}>
           Motor
+        </button>{' '}
+        ·{' '}
+        <button
+          type="button"
+          className="link-btn"
+          disabled={busy}
+          onClick={() => onSample('supreme')}
+          title="A 53-page health policy with annexures and FAQs"
+        >
+          Long health (53 pages)
         </button>
       </p>
     </div>

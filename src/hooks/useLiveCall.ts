@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PolicyIndex } from '../docs/search';
 import type { Language } from '../lib/language';
 import { emptyCase, type CaseState, type Citation } from '../live/case-tools';
 import { LiveCall, type Activity, type CallPhase, type PolicyContext, type Utterance } from '../live/live-call';
@@ -48,7 +49,7 @@ export function useLiveCall() {
   const patch = useCallback((next: Partial<CallSnapshot>) => setSnapshot((s) => ({ ...s, ...next })), []);
 
   const start = useCallback(
-    async (policy?: PolicyContext) => {
+    async (policy?: PolicyContext, index?: PolicyIndex) => {
       callRef.current?.end();
       setSnapshot(initial());
 
@@ -65,7 +66,7 @@ export function useLiveCall() {
           onLanguage: (language) => patch({ language, languages: [...call.languages] }),
           onCite: (citation) => patch({ focus: { citation, nonce: ++nonce } }),
         },
-        { policy },
+        { policy, index },
       );
       callRef.current = call;
       await call.start();
@@ -98,7 +99,10 @@ export function useLiveCall() {
 
   const stopScreen = useCallback(() => callRef.current?.stopScreenShare(), []);
   const sendText = useCallback((text: string) => callRef.current?.sendText(text), []);
-  const attachPolicy = useCallback((policy: PolicyContext) => callRef.current?.attachPolicy(policy), []);
+  const attachPolicy = useCallback(
+    (policy: PolicyContext, index: PolicyIndex) => callRef.current?.attachPolicy(policy, index),
+    [],
+  );
 
   // Hang up if the page goes away mid-call.
   useEffect(() => {

@@ -4,13 +4,14 @@ import { HomeView } from './components/HomeView';
 import { SummaryView } from './components/SummaryView';
 import { TopBar } from './components/TopBar';
 import { initLiquidGlass } from './design/liquid-glass.js';
+import { indexFor } from './docs/search';
 import type { PolicyDocument } from './docs/types';
 import { useLiveCall } from './hooks/useLiveCall';
 import { usePolicyDocument } from './hooks/usePolicyDocument';
 import { prewarmSession, type PolicyContext } from './live/live-call';
 
 const toContext = (doc: PolicyDocument | null): PolicyContext | undefined =>
-  doc ? { name: doc.name, text: doc.contextText } : undefined;
+  doc ? { name: doc.name, text: doc.contextText, mode: doc.contextMode } : undefined;
 
 export default function App() {
   const call = useLiveCall();
@@ -26,7 +27,7 @@ export default function App() {
 
   const start = useCallback(() => {
     attachedId.current = policy.doc?.id ?? null;
-    void startCall(toContext(policy.doc));
+    void startCall(toContext(policy.doc), policy.doc ? indexFor(policy.doc.chunks) : undefined);
   }, [startCall, policy.doc]);
 
   const prewarm = useCallback(() => prewarmSession(toContext(policy.doc)), [policy.doc]);
@@ -34,7 +35,7 @@ export default function App() {
   useEffect(() => {
     if (phase !== 'live' || !policy.doc || policy.doc.id === attachedId.current) return;
     attachedId.current = policy.doc.id;
-    attachPolicy(toContext(policy.doc)!);
+    attachPolicy(toContext(policy.doc)!, indexFor(policy.doc.chunks));
   }, [phase, policy.doc, attachPolicy]);
 
   // One screen per stage of the call, each with a single primary action:

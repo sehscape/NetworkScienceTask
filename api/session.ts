@@ -11,12 +11,13 @@ import { errorResponse, isCrossSite, json, readJson } from './_lib/http.js';
  *
  * Body (all optional):
  *   resumeHandle  continue a session after the server recycles the connection
- *   policy        { name, text } of a policy the caller loaded before the call;
- *                 it goes into the locked system prompt
+ *   policy        { name, text, mode } of a policy the caller loaded before
+ *                 the call; it goes into the locked system prompt. mode is
+ *                 'outline' for long policies the model searches instead.
  */
 interface Body {
   resumeHandle?: unknown;
-  policy?: { name?: unknown; text?: unknown };
+  policy?: { name?: unknown; text?: unknown; mode?: unknown };
 }
 
 export async function POST(request: Request) {
@@ -31,7 +32,9 @@ export async function POST(request: Request) {
     if (body.policy.text.length > MAX_POLICY_CHARS) return json({ error: 'policy_too_long' }, 413);
     policy = {
       name: String(body.policy.name ?? 'Policy document').slice(0, 120).replace(/["<>]/g, ''),
-      text: body.policy.text,
+      // A document can't close the policy tags early and talk to the model as "the system".
+      text: body.policy.text.replace(/<\/?policy>/gi, ''),
+      mode: body.policy.mode === 'outline' ? 'outline' : 'full',
     };
   }
 

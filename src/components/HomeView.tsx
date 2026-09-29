@@ -5,6 +5,7 @@ import type { PolicyState } from '../hooks/usePolicyDocument';
 import { FadeHeading } from './FadeHeading';
 import { Icon, type IconName } from './Icon';
 import { PolicyDrop } from './PolicyDrop';
+import { PolicyGlance } from './PolicyGlance';
 
 interface Props {
   policy: PolicyState;
@@ -18,12 +19,12 @@ const STEPS: { icon: IconName; title: string; text: string; note: string }[] = [
     icon: 'mic',
     title: 'Say what happened',
     text: 'Describe the claim the way you would to a person, in any Indian language. Interrupt whenever you like.',
-    note: 'Replies start in under a second',
+    note: 'Hindi, Tamil, Hinglish and more',
   },
   {
     icon: 'doc',
     title: 'Show the policy',
-    text: 'Upload the whole policy, or share your screen. Scroll it right here while you talk; no switching tabs.',
+    text: 'Upload the whole policy, however long, or share your screen. Scroll and search it right here while you talk.',
     note: 'PDFs, scans and phone photos',
   },
   {
@@ -62,10 +63,17 @@ function LoadedPolicy({ doc, policy }: { doc: PolicyDocument; policy: PolicyStat
         </span>
         <strong title={doc.name}>{doc.name}</strong>
         <span>
-          {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}
+          {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'} · {doc.chunks.length} clauses indexed
           {doc.ocr ? ' · text read with OCR' : ''}
         </span>
-        <p>The assistant reads the whole policy when the call starts, and you can scroll it during the call.</p>
+        <p>
+          {doc.contextMode === 'full'
+            ? 'The assistant reads the whole policy when the call starts, and you can scroll it during the call.'
+            : 'A long one. The assistant searches every clause as you talk, and you can scroll it during the call.'}
+        </p>
+        <a className="link-btn loaded-glance-link" href="#glance">
+          See it at a glance
+        </a>
         <div className="loaded-actions">
           <button className="btn btn-quiet" onClick={policy.clear}>
             <Icon name="close" />
@@ -92,12 +100,12 @@ export function HomeView({ policy, onStart, onPrewarm, error }: Props) {
 
             <dl className="stats">
               <div>
-                <dt>&lt;1s</dt>
-                <dd>reply time</dd>
-              </div>
-              <div>
                 <dt>10+</dt>
                 <dd>Indian languages</dd>
+              </div>
+              <div>
+                <dt>50+</dt>
+                <dd>page policies searched</dd>
               </div>
               <div>
                 <dt>0</dt>
@@ -145,6 +153,12 @@ export function HomeView({ policy, onStart, onPrewarm, error }: Props) {
           </div>
         </div>
       </section>
+
+      {policy.doc && (
+        <section className="section glance-section" id="glance">
+          <PolicyGlance doc={policy.doc} />
+        </section>
+      )}
 
       <section className="section">
         <p className="eyebrow">How it works</p>

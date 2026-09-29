@@ -42,7 +42,8 @@ export function firstSuccessful<T>(
         .catch((err) => {
           lastError = err;
           if (done) return;
-          console.warn(`[gemini] ${model} failed, trying the next model`);
+          const status = (err as { status?: number })?.status ?? 'error';
+          console.warn(`[gemini] ${model} failed (${status}), trying the next model`);
           launch();
         })
         .finally(() => {

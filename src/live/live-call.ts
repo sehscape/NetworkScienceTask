@@ -1,10 +1,13 @@
 import { GoogleGenAI, Modality, type FunctionCall, type LiveServerMessage, type Session } from '@google/genai';
 import { MicCapture, MicError } from '../audio/mic-capture';
 import { PcmPlayer, bytesToBase64 } from '../audio/pcm-player';
+import { clauseTitle, type PolicyIndex } from '../docs/search';
+import type { PolicyChunk } from '../docs/types';
 import { openDocChannel } from '../lib/doc-channel';
 import { cleanSpaces } from '../lib/format';
 import { detectLanguage, type Language } from '../lib/language';
-import { emptyCase, runTool, type CaseState, type Citation } from './case-tools';
+import { impliedCitation, summarise } from './auto-cite';
+import { emptyCase, runTool, type CaseState, type Citation, type ToolResult } from './case-tools';
 import { ScreenShare, type ScreenStats } from './screen-share';
 
 export type CallPhase = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'ended' | 'error';
@@ -30,10 +33,11 @@ export interface Activity {
   at: number;
 }
 
-/** A policy the caller loaded in the app. Its text goes to the model. */
+/** A policy the caller loaded in the app. Its text (or outline, for long ones) goes to the model. */
 export interface PolicyContext {
   name: string;
   text: string;
+  mode: 'full' | 'outline';
 }
 
 export interface LiveCallHandlers {
@@ -123,6 +127,8 @@ export class LiveCall {
   private reconnecting = false;
   /** The policy baked into this session's system prompt (reused when resuming). */
   private sessionPolicy?: PolicyContext;
+  /** Search index over the loaded policy; search_policy and cite_clause run against it. */
+  private index?: PolicyIndex;
 
   private mic?: MicCapture;
   private player?: PcmPlayer;
@@ -133,6 +139,14 @@ export class LiveCall {
   private openAssistant?: Utterance;
   private idCounter = 0;
 
+  // What the current reply rests on, for the citation safety net.
+  private turnResults: PolicyChunk[] = [];
+  private turnQueries: string[] = [];
+  private turnAnswer = '';
+  private turnCited = false;
+  /** Id of a citation the app pinned itself this turn. */
+  private autoCited?: string;
+
   // Latency tracking
   private lastInputAt = 0;
   private lastTranscriptAt = 0;
@@ -141,9 +155,10 @@ export class LiveCall {
 
   constructor(
     private handlers: LiveCallHandlers,
-    options: { policy?: PolicyContext } = {},
+    options: { policy?: PolicyContext; index?: PolicyIndex } = {},
   ) {
     this.sessionPolicy = options.policy;
+    this.index = options.index;
   }
 
   // ---------------------------------------------------------------- public
@@ -197,14 +212,17 @@ export class LiveCall {
     this.player?.interrupt();
     this.closeOpenTurns();
     this.pushUtterance({ speaker: 'caller', text: clean, final: true, typed: true, language: this.noteLanguage(clean) });
+    this.resetTurnGrounding();
     this.lastInputAt = Date.now();
     this.session.sendRealtimeInput({ text: clean });
   }
 
-  /** A policy loaded mid-call: hand its full text to the model right away. */
-  attachPolicy(policy: PolicyContext) {
+  /** A policy loaded mid-call: hand its text (or outline) to the model right away. */
+  attachPolicy(policy: PolicyContext, index: PolicyIndex) {
     if (this.phase !== 'live' || !this.session) return;
-    this.sendEvent(`[policy uploaded: "${policy.name}". Full text follows.]\n${policy.text}`);
+    this.index = index;
+    const what = policy.mode === 'full' ? 'Full text follows' : 'It is long: its first pages and an outline follow';
+    this.sendEvent(`[policy uploaded: "${policy.name}". ${what}.]\n${policy.text}`);
   }
 
   async startScreenShare() {
@@ -347,6 +365,9 @@ export class LiveCall {
       // Caller barged in: silence the buffered audio right away.
       this.player?.interrupt();
       this.modelTurnOpen = false;
+      this.checkImpliedCitation(true);
+      this.finishAutoCitation();
+      this.resetTurnGrounding();
       if (this.openAssistant) {
         this.openAssistant.interrupted = true;
         this.openAssistant.final = true;
@@ -374,6 +395,9 @@ export class LiveCall {
     if (content?.turnComplete) {
       this.modelTurnOpen = false;
       this.closeOpenTurns();
+      this.checkImpliedCitation(true);
+      this.finishAutoCitation();
+      this.resetTurnGrounding();
     }
 
     if (msg.toolCall?.functionCalls?.length) {
@@ -411,22 +435,71 @@ export class LiveCall {
   private handleToolCalls(calls: FunctionCall[]) {
     const functionResponses = calls.map((call) => {
       const name = call.name ?? '';
-      const result = runTool(name, call.args, this.caseState);
-      this.caseState = result.state;
-      this.handlers.onCase(this.caseState);
-      this.handlers.onActivity({ id: this.nextId(), tool: name, text: result.activity, at: Date.now() });
+      const result = runTool(name, call.args, this.caseState, this.index);
+      this.applyToolResult(name, result);
 
-      if (name === 'cite_clause' && this.caseState.citations[0]) {
-        const citation = this.caseState.citations[0];
-        this.handlers.onCite(citation);
-        // Also reaches the standalone policy page if it's open in another tab.
-        this.doc.post({ type: 'highlight', ref: citation.clause_ref, quote: citation.quote });
+      if (name === 'cite_clause') this.turnCited = true;
+      if (name === 'search_policy' && Array.isArray(result.response.results)) {
+        if (call.args?.query) this.turnQueries.push(String(call.args.query));
+        for (const hit of result.response.results as { clause_id: string }[]) {
+          const chunk = this.index?.byId(hit.clause_id);
+          if (chunk) this.turnResults.push(chunk);
+        }
       }
       return { id: call.id, name, response: result.response };
     });
 
     // 3.1 Flash Live only supports blocking tools: the model waits for this reply before it speaks again.
     this.session?.sendToolResponse({ functionResponses });
+  }
+
+  private applyToolResult(name: string, result: ToolResult) {
+    this.caseState = result.state;
+    this.handlers.onCase(this.caseState);
+    this.handlers.onActivity({ id: this.nextId(), tool: name, text: result.activity, at: Date.now() });
+
+    if (name === 'cite_clause' && this.caseState.citations[0]) {
+      const citation = this.caseState.citations[0];
+      this.handlers.onCite(citation);
+      // Also reaches the standalone policy page if it's open in another tab.
+      this.doc.post({ type: 'highlight', ref: citation.clause_ref, quote: citation.quote });
+    }
+  }
+
+  /**
+   * If the model answers from the policy but doesn't cite, pin the clause
+   * itself, as soon as it is clear which one the answer rests on.
+   */
+  private checkImpliedCitation(final: boolean) {
+    if (this.turnCited || !this.index || (!final && !this.turnResults.length)) return;
+    const queries = this.turnQueries.join(' ');
+    const implied = impliedCitation(this.turnAnswer, this.turnResults, this.index, final, queries);
+    if (!implied) return;
+
+    this.turnCited = true;
+    const { chunk, quote, meaning } = implied;
+    const args = { clause_id: chunk.id, clause_ref: chunk.ref ?? '', title: clauseTitle(chunk), quote, meaning };
+    this.applyToolResult('cite_clause', runTool('cite_clause', args, this.caseState, this.index));
+    this.autoCited = this.caseState.citations[0]?.id;
+  }
+
+  /** A pin made mid-answer takes its one-line meaning from the finished answer. */
+  private finishAutoCitation() {
+    const id = this.autoCited;
+    this.autoCited = undefined;
+    const meaning = id ? summarise(this.turnAnswer) : '';
+    if (!meaning) return;
+    const citations = this.caseState.citations.map((c) => (c.id === id ? { ...c, meaning } : c));
+    this.caseState = { ...this.caseState, citations };
+    this.handlers.onCase(this.caseState);
+  }
+
+  private resetTurnGrounding() {
+    this.turnResults = [];
+    this.turnQueries = [];
+    this.turnAnswer = '';
+    this.turnCited = false;
+    this.autoCited = undefined;
   }
 
   // -------------------------------------------------------------- outbound
@@ -465,7 +538,9 @@ export class LiveCall {
       this.openAssistant = this.pushUtterance({ speaker: 'assistant', text: '', final: false });
     }
     this.openAssistant.text = joinChunk(this.openAssistant.text, text);
+    this.turnAnswer = joinChunk(this.turnAnswer, text);
     this.emitTranscript();
+    this.checkImpliedCitation(false);
   }
 
   private closeCallerTurn() {

@@ -9,6 +9,8 @@ interface Props {
 }
 
 const TOOL_ICON: Record<string, IconName> = {
+  search_policy: 'search',
+  flag_out_of_scope: 'shield',
   cite_clause: 'pin',
   estimate_payout: 'calc',
   assess_coverage: 'shield',

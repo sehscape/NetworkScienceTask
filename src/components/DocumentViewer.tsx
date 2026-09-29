@@ -1,15 +1,38 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getPdf } from '../docs/load';
 import { locateClause } from '../docs/locate';
 import { renderPage } from '../docs/pdf';
-import type { ClauseHit, PolicyDocument } from '../docs/types';
-import type { Citation } from '../live/case-tools';
+import { clauseTitle, indexFor, snippet } from '../docs/search';
+import type { ClauseHit, PolicyChunk, PolicyDocument } from '../docs/types';
 import { Icon } from './Icon';
+
+/** Something to scroll to and light up: a cited clause, a search hit or an "at a glance" fact. */
+export interface FocusTarget {
+  label: string;
+  /** Printed clause number, used to find the clause when no location is known. */
+  ref?: string;
+  quote?: string;
+  location?: ClauseHit;
+  cited?: boolean;
+}
+
+export interface ViewerFocus {
+  target: FocusTarget;
+  nonce: number;
+}
+
+export const chunkTarget = (chunk: PolicyChunk): FocusTarget => ({
+  label: chunk.ref ?? `p.${chunk.location.page}`,
+  ref: chunk.ref,
+  location: chunk.location,
+});
 
 interface Props {
   doc: PolicyDocument;
-  /** When this changes, scroll to the cited clause and highlight it. */
-  focus?: { citation: Citation; nonce: number };
+  /** When this changes, scroll to the target and highlight it. */
+  focus?: ViewerFocus;
+  /** During a call: ask the assistant about a clause found with search. */
+  onAsk?: (question: string) => void;
   onReplace?: () => void;
   onClose?: () => void;
 }
@@ -21,7 +44,7 @@ const ZOOMS = [0.75, 1, 1.25, 1.5, 2];
  * PDF pages are drawn with pdf.js only when they come near the viewport, and
  * the assistant can scroll to and highlight any clause it cites.
  */
-export function DocumentViewer({ doc, focus, onReplace, onClose }: Props) {
+export function DocumentViewer({ doc, focus, onAsk, onReplace, onClose }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageEls = useRef(new Map<number, HTMLDivElement>());
   const holders = useRef(new Map<number, HTMLDivElement>());
@@ -32,8 +55,10 @@ export function DocumentViewer({ doc, focus, onReplace, onClose }: Props) {
   const [zoom, setZoom] = useState(1);
   const [near, setNear] = useState<number[]>([1, 2]);
   const [visible, setVisible] = useState(1);
-  const [hit, setHit] = useState<(ClauseHit & { ref: string; nonce: number }) | null>(null);
+  const [hit, setHit] = useState<(ClauseHit & { label: string; cited?: boolean; nonce: number }) | null>(null);
   const [missing, setMissing] = useState<string | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [query, setQuery] = useState('');
 
   const pageWidth = Math.max(240, Math.round(fitWidth * ZOOMS[zoom]));
 
@@ -124,25 +149,50 @@ export function DocumentViewer({ doc, focus, onReplace, onClose }: Props) {
     return () => window.clearTimeout(timer);
   }, [doc, near, pageWidth, fitWidth]);
 
-  // Scroll to and highlight the clause the assistant just cited.
-  useEffect(() => {
-    if (!focus) return;
-    const found = locateClause(doc, focus.citation.clause_ref, focus.citation.quote);
-    if (!found) {
-      setMissing(focus.citation.clause_ref);
-      const timer = window.setTimeout(() => setMissing(null), 3500);
-      return () => window.clearTimeout(timer);
-    }
-    setHit({ ...found, ref: focus.citation.clause_ref, nonce: focus.nonce });
+  const show = useCallback(
+    (target: FocusTarget, nonce: number) => {
+      // Clauses cited from the app's own index carry their exact location;
+      // anything else (a clause read off a shared screen) is looked up by number.
+      const found = target.location ?? (target.ref ? locateClause(doc, target.ref, target.quote) : null);
+      if (!found) {
+        setMissing(target.label);
+        return;
+      }
+      setHit({ ...found, label: target.label, cited: target.cited, nonce });
 
-    const pageEl = pageEls.current.get(found.page);
-    const root = scrollRef.current;
-    const page = doc.pages[found.page - 1];
-    if (pageEl && root && page) {
-      const offset = found.top !== undefined ? (found.top / page.height) * pageEl.offsetHeight : 0;
-      root.scrollTo({ top: pageEl.offsetTop + offset - root.clientHeight * 0.22, behavior: 'smooth' });
-    }
-  }, [focus, doc]);
+      const pageEl = pageEls.current.get(found.page);
+      const root = scrollRef.current;
+      const page = doc.pages[found.page - 1];
+      if (pageEl && root && page) {
+        const offset = found.top !== undefined ? (found.top / page.height) * pageEl.offsetHeight : 0;
+        root.scrollTo({ top: pageEl.offsetTop + offset - root.clientHeight * 0.22, behavior: 'smooth' });
+      }
+    },
+    [doc],
+  );
+
+  // Wait for the first measurement when the viewer has only just mounted
+  // (e.g. coming from the "at a glance" tab), or the page offsets are wrong.
+  const measured = fitWidth > 0;
+  useEffect(() => {
+    if (focus && measured) show(focus.target, focus.nonce);
+  }, [focus, show, measured]);
+
+  useEffect(() => {
+    if (!missing) return;
+    const timer = window.setTimeout(() => setMissing(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [missing]);
+
+  const results = useMemo(
+    () => (query.trim().length > 1 ? indexFor(doc.chunks).search(query, 6) : []),
+    [doc, query],
+  );
+
+  const pick = (chunk: PolicyChunk) => {
+    setFinding(false);
+    show(chunkTarget(chunk), Date.now());
+  };
 
   return (
     <div className="doc-viewer">
@@ -153,14 +203,22 @@ export function DocumentViewer({ doc, focus, onReplace, onClose }: Props) {
           </span>
           <div>
             <strong>{doc.name}</strong>
-            <span>
-              {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}
-              {doc.ocr && ' · read with OCR'}
-              {doc.truncated && ' · very long, partly sent'}
+            <span title={`${doc.chunks.length} clauses indexed for search`}>
+              {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'} · {doc.chunks.length} clauses
+              {doc.ocr && ' · OCR'}
             </span>
           </div>
         </div>
         <div className="doc-tools">
+          <button
+            className="icon-btn icon-btn-sm"
+            aria-pressed={finding}
+            aria-label="Find in policy"
+            title="Find in policy"
+            onClick={() => setFinding((f) => !f)}
+          >
+            <Icon name="search" />
+          </button>
           <span className="page-indicator mono" aria-live="polite">
             {visible} / {doc.pages.length}
           </span>
@@ -192,6 +250,56 @@ export function DocumentViewer({ doc, focus, onReplace, onClose }: Props) {
           )}
         </div>
       </div>
+
+      {finding && (
+        <div className="doc-find">
+          <label className="doc-find-bar">
+            <Icon name="search" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setFinding(false);
+                if (e.key === 'Enter' && results[0]) pick(results[0].chunk);
+              }}
+              placeholder="Find in your policy: room rent, cataract, 3.6…"
+              aria-label="Find in policy"
+            />
+          </label>
+          {results.length > 0 && (
+            <ul className="doc-find-results scroll-area">
+              {results.map(({ chunk }) => (
+                <li key={chunk.id}>
+                  <button className="doc-find-hit" onClick={() => pick(chunk)}>
+                    <span className="doc-find-head">
+                      {chunk.ref && <span className="mono">{chunk.ref}</span>}
+                      <strong>{clauseTitle(chunk)}</strong>
+                      <span className="doc-find-page">p.{chunk.location.page}</span>
+                    </span>
+                    <span className="doc-find-snippet">{snippet(chunk, query)}</span>
+                  </button>
+                  {onAsk && (
+                    <button
+                      className="btn btn-quiet doc-find-ask"
+                      title="Ask the assistant about this clause"
+                      onClick={() => {
+                        pick(chunk);
+                        onAsk(`What does ${chunk.ref ? `clause ${chunk.ref}` : `"${clauseTitle(chunk)}"`} of my policy mean for me?`);
+                      }}
+                    >
+                      Ask
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {query.trim().length > 1 && !results.length && (
+            <p className="doc-find-empty">Nothing in this policy mentions that.</p>
+          )}
+        </div>
+      )}
 
       <div className="doc-scroll scroll-area" ref={scrollRef}>
         <div className="doc-pages">
@@ -231,7 +339,7 @@ export function DocumentViewer({ doc, focus, onReplace, onClose }: Props) {
                     }}
                   >
                     <span className="doc-highlight-tag">
-                      <Icon name="pin" /> Cited · {hit.ref}
+                      <Icon name={hit.cited ? 'pin' : 'eye'} /> {hit.cited ? `Cited · ${hit.label}` : hit.label}
                     </span>
                   </div>
                 )}

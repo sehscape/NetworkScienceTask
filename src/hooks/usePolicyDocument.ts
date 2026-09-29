@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DocumentError, loadFiles, loadSample, releaseDocument, type LoadProgress } from '../docs/load';
+import { DocumentError, loadFiles, loadSample, releaseDocument, type LoadProgress, type SampleName } from '../docs/load';
 import type { PolicyDocument } from '../docs/types';
 
 export type DocStatus = 'empty' | 'loading' | 'ready' | 'error';
@@ -37,7 +37,7 @@ export function usePolicyDocument() {
   }, []);
 
   const fromFiles = useCallback((files: File[]) => load((p) => loadFiles(files, p)), [load]);
-  const fromSample = useCallback((sample: 'health' | 'motor') => load((p) => loadSample(sample, p)), [load]);
+  const fromSample = useCallback((sample: SampleName) => load((p) => loadSample(sample, p)), [load]);
 
   const clear = useCallback(() => {
     attempt.current++;
